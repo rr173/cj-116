@@ -3,35 +3,33 @@ import * as d3 from 'd3';
 import { useAppStore } from '../store/useAppStore';
 import { StratigraphicUnit, StratigraphicRelation } from '../types';
 
-interface NodePosition {
-  id: string;
-  x: number;
-  y: number;
-}
-
 export default function HarrisMatrixView() {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const nodePositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const selectedTrenchId = useAppStore((state) => state.selectedTrenchId);
-  const units = useAppStore((state) =>
-    state.units.filter((u) => u.trenchId === selectedTrenchId)
+  const allUnits = useAppStore((state) => state.units);
+  const allRelations = useAppStore((state) => state.relations);
+
+  const units = useMemo(
+    () => allUnits.filter((u) => u.trenchId === selectedTrenchId),
+    [allUnits, selectedTrenchId]
   );
-  const relations = useAppStore((state) =>
-    state.relations.filter((r) => r.trenchId === selectedTrenchId)
+  const relations = useMemo(
+    () => allRelations.filter((r) => r.trenchId === selectedTrenchId),
+    [allRelations, selectedTrenchId]
   );
 
-  const [nodePositions, setNodePositions] = useState<Map<string, { x: number; y: number }>>(
-    new Map()
-  );
   const [hasCycle, setHasCycle] = useState(false);
   const [cycleNodes, setCycleNodes] = useState<string[]>([]);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
   const detectCycle = useCallback(
-    (unitIds: string[], rels: StratigraphicRelation[]): boolean => {
+    (unitIds: string[], rels: StratigraphicRelation[]): { hasCycle: boolean; cycleNodes: string[] } => {
       const visited = new Set<string>();
       const recStack = new Set<string>();
       const cyclePath: string[] = [];
+      let foundCycle: string[] = [];
 
       const adjList = new Map<string, string[]>();
       unitIds.forEach((id) => adjList.set(id, []));
@@ -51,7 +49,7 @@ export default function HarrisMatrixView() {
             if (dfs(neighbor)) return true;
           } else if (recStack.has(neighbor)) {
             const cycleStart = cyclePath.indexOf(neighbor);
-            setCycleNodes(cyclePath.slice(cycleStart));
+            foundCycle = cyclePath.slice(cycleStart);
             return true;
           }
         }
@@ -61,13 +59,17 @@ export default function HarrisMatrixView() {
         return false;
       };
 
+      let hasCycle = false;
       for (const unitId of unitIds) {
         if (!visited.has(unitId)) {
-          if (dfs(unitId)) return true;
+          if (dfs(unitId)) {
+            hasCycle = true;
+            break;
+          }
         }
       }
 
-      return false;
+      return { hasCycle, cycleNodes: foundCycle };
     },
     []
   );
@@ -135,7 +137,6 @@ export default function HarrisMatrixView() {
       levelGroups.get(level)!.push(u.id);
     });
 
-    const maxLevel = Math.max(...levelGroups.keys(), 0);
     const levelHeight = 100;
     const nodeWidth = 120;
     const nodeHeight = 60;
@@ -156,38 +157,11 @@ export default function HarrisMatrixView() {
       });
     });
 
-    setNodePositions(newPositions);
+    nodePositionsRef.current = newPositions;
+    renderGraph();
   }, [units, relations, dimensions, topologicalLevels]);
 
-  useEffect(() => {
-    if (containerRef.current) {
-      const updateSize = () => {
-        if (containerRef.current) {
-          setDimensions({
-            width: containerRef.current.clientWidth,
-            height: containerRef.current.clientHeight,
-          });
-        }
-      };
-      updateSize();
-      window.addEventListener('resize', updateSize);
-      return () => window.removeEventListener('resize', updateSize);
-    }
-  }, []);
-
-  useEffect(() => {
-    const cycle = detectCycle(
-      units.map((u) => u.id),
-      relations
-    );
-    setHasCycle(cycle);
-  }, [units, relations, detectCycle]);
-
-  useEffect(() => {
-    layoutNodes();
-  }, [layoutNodes]);
-
-  useEffect(() => {
+  const renderGraph = useCallback(() => {
     if (!svgRef.current || units.length === 0) return;
 
     const svg = d3.select(svgRef.current);
@@ -223,25 +197,26 @@ export default function HarrisMatrixView() {
     const g = svg.append('g');
 
     const edges = g.append('g').attr('class', 'edges');
-    relations.forEach((rel) => {
-      const fromPos = nodePositions.get(rel.fromUnitId);
-      const toPos = nodePositions.get(rel.toUnitId);
+    relations.forEach((rel, idx) => {
+      const fromPos = nodePositionsRef.current.get(rel.fromUnitId);
+      const toPos = nodePositionsRef.current.get(rel.toUnitId);
       if (!fromPos || !toPos) return;
 
       const isCut = rel.type === '打破' || rel.type === '被打破';
-      const isCycle = hasCycle && 
+      const isCycleEdge = hasCycle && 
         cycleNodes.includes(rel.fromUnitId) && 
         cycleNodes.includes(rel.toUnitId);
 
       const midY = (fromPos.y + toPos.y) / 2;
-
       const pathData = `M ${fromPos.x} ${fromPos.y + 30} C ${fromPos.x} ${midY}, ${toPos.x} ${midY}, ${toPos.x} ${toPos.y - 30}`;
 
       edges
         .append('path')
+        .attr('class', 'edge-path')
+        .attr('data-idx', idx)
         .attr('d', pathData)
         .attr('fill', 'none')
-        .attr('stroke', isCycle ? '#ef4444' : isCut ? '#ef4444' : '#94a3b8')
+        .attr('stroke', isCycleEdge ? '#ef4444' : isCut ? '#ef4444' : '#94a3b8')
         .attr('stroke-width', 2)
         .attr('stroke-dasharray', isCut ? '8,4' : 'none')
         .attr('marker-end', `url(#${isCut ? 'arrowhead-cut' : 'arrowhead'})`);
@@ -249,13 +224,15 @@ export default function HarrisMatrixView() {
 
     const nodes = g.append('g').attr('class', 'nodes');
     units.forEach((unit) => {
-      const pos = nodePositions.get(unit.id);
+      const pos = nodePositionsRef.current.get(unit.id);
       if (!pos) return;
 
       const isInCycle = hasCycle && cycleNodes.includes(unit.id);
 
       const nodeGroup = nodes
         .append('g')
+        .attr('class', 'node-group')
+        .attr('data-unit-id', unit.id)
         .attr('transform', `translate(${pos.x - 60}, ${pos.y - 30})`)
         .style('cursor', 'move')
         .call(
@@ -265,22 +242,19 @@ export default function HarrisMatrixView() {
               d3.select(this).raise();
             })
             .on('drag', function (event) {
-              const currentPos = nodePositions.get(unit.id) || { x: 0, y: 0 };
+              const unitId = d3.select(this).attr('data-unit-id') as string;
+              const currentPos = nodePositionsRef.current.get(unitId) || { x: 0, y: 0 };
               const newX = currentPos.x + event.dx;
               const newY = currentPos.y + event.dy;
+
+              nodePositionsRef.current.set(unitId, { x: newX, y: newY });
 
               d3.select(this).attr(
                 'transform',
                 `translate(${newX - 60}, ${newY - 30})`
               );
 
-              setNodePositions((prev) => {
-                const next = new Map(prev);
-                next.set(unit.id, { x: newX, y: newY });
-                return next;
-              });
-
-              updateEdges();
+              updateEdgePositions();
             })
         );
 
@@ -321,12 +295,12 @@ export default function HarrisMatrixView() {
         .text(unit.name);
     });
 
-    function updateEdges() {
-      const edgePaths = svg.selectAll('.edges path');
+    function updateEdgePositions() {
+      const edgePaths = svg.selectAll('.edge-path');
       edgePaths.each(function (_, i) {
         const rel = relations[i];
-        const fromPos = nodePositions.get(rel.fromUnitId);
-        const toPos = nodePositions.get(rel.toUnitId);
+        const fromPos = nodePositionsRef.current.get(rel.fromUnitId);
+        const toPos = nodePositionsRef.current.get(rel.toUnitId);
         if (!fromPos || !toPos) return;
 
         const midY = (fromPos.y + toPos.y) / 2;
@@ -335,7 +309,55 @@ export default function HarrisMatrixView() {
         d3.select(this).attr('d', pathData);
       });
     }
-  }, [units, relations, nodePositions, hasCycle, cycleNodes]);
+  }, [units, relations, hasCycle, cycleNodes]);
+
+  useEffect(() => {
+    if (containerRef.current) {
+      const updateSize = () => {
+        if (containerRef.current) {
+          setDimensions({
+            width: containerRef.current.clientWidth,
+            height: containerRef.current.clientHeight,
+          });
+        }
+      };
+      updateSize();
+      window.addEventListener('resize', updateSize);
+      return () => window.removeEventListener('resize', updateSize);
+    }
+  }, []);
+
+  useEffect(() => {
+    const result = detectCycle(
+      units.map((u) => u.id),
+      relations
+    );
+    setHasCycle((prev) => {
+      if (prev !== result.hasCycle) return result.hasCycle;
+      return prev;
+    });
+    setCycleNodes((prev) => {
+      if (
+        prev.length !== result.cycleNodes.length ||
+        prev.some((node, idx) => node !== result.cycleNodes[idx])
+      ) {
+        return result.cycleNodes;
+      }
+      return prev;
+    });
+  }, [units, relations, detectCycle]);
+
+  useEffect(() => {
+    if (units.length > 0) {
+      layoutNodes();
+    }
+  }, [units, relations, dimensions]);
+
+  useEffect(() => {
+    if (units.length > 0 && nodePositionsRef.current.size > 0) {
+      renderGraph();
+    }
+  }, [hasCycle, cycleNodes]);
 
   return (
     <div className="h-full flex flex-col">

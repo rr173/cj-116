@@ -9,10 +9,10 @@ export default function StratigraphyPanel() {
   const selectedCellId = useAppStore((state) => state.selectedCellId);
   const selectedTrenchId = useAppStore((state) => state.selectedTrenchId);
   const getCellById = useAppStore((state) => state.getCellById);
-  const getStratigraphiesByCell = useAppStore((state) => state.getStratigraphiesByCell);
   const addStratigraphy = useAppStore((state) => state.addStratigraphy);
   const updateStratigraphy = useAppStore((state) => state.updateStratigraphy);
   const deleteStratigraphy = useAppStore((state) => state.deleteStratigraphy);
+  const stratigraphiesData = useAppStore((state) => state.stratigraphies);
   const units = useAppStore((state) => state.units.filter(u => u.trenchId === selectedTrenchId));
   const assignStratigraphyToUnit = useAppStore((state) => state.assignStratigraphyToUnit);
   const unassignStratigraphyFromUnit = useAppStore((state) => state.unassignStratigraphyFromUnit);
@@ -23,8 +23,13 @@ export default function StratigraphyPanel() {
 
   const cell = getCellById(selectedCellId || '');
   const stratigraphies = useMemo(
-    () => (selectedCellId ? getStratigraphiesByCell(selectedCellId) : []),
-    [selectedCellId, getStratigraphiesByCell]
+    () => (selectedCellId 
+      ? stratigraphiesData
+          .filter((s) => s.cellId === selectedCellId)
+          .sort((a, b) => b.topElevation - a.topElevation)
+      : []
+    ),
+    [selectedCellId, stratigraphiesData]
   );
 
   const [formData, setFormData] = useState({
