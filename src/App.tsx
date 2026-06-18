@@ -8,9 +8,10 @@ import HarrisMatrixView from './components/HarrisMatrixView';
 import ArtifactsPanel from './components/ArtifactsPanel';
 import ProfileView from './components/ProfileView';
 import WelcomeScreen from './components/WelcomeScreen';
+import SamplesPanel from './components/SamplesPanel';
 import { useAppStore } from './store/useAppStore';
 
-type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'profile';
+type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile';
 
 function App() {
   const [currentView, setCurrentView] = useState<ViewType>('grid');
@@ -36,6 +37,8 @@ function App() {
         return <HarrisMatrixView />;
       case 'artifacts':
         return <ArtifactsPanel />;
+      case 'samples':
+        return <SamplesPanel />;
       case 'profile':
         return <ProfileView />;
       default:

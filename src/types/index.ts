@@ -109,6 +109,61 @@ export interface HarrisMatrix {
   cycleNodes: string[];
 }
 
+export type SampleType = '碳十四测年' | '孢粉' | '土壤' | '浮选' | '其他';
+
+export type SampleStatus = '采集' | '登记' | '送检' | '检测中' | '结果回填' | '归档';
+
+export const SAMPLE_STATUS_ORDER: SampleStatus[] = ['采集', '登记', '送检', '检测中', '结果回填', '归档'];
+
+export const SAMPLE_TYPE_PREFIX: Record<SampleType, string> = {
+  '碳十四测年': 'C14',
+  '孢粉': 'BP',
+  '土壤': 'TR',
+  '浮选': 'FX',
+  '其他': 'QT',
+};
+
+export interface StatusChangeLog {
+  from: SampleStatus;
+  to: SampleStatus;
+  operator: string;
+  timestamp: number;
+}
+
+export interface SampleResult {
+  description: string;
+  values: Record<string, number>;
+}
+
+export interface Sample {
+  id: string;
+  sampleNumber: string;
+  type: SampleType;
+  status: SampleStatus;
+  trenchId: string;
+  cellId: string;
+  stratigraphyId: string;
+  unitId?: string;
+  collector: string;
+  collectedAt: number;
+  statusHistory: StatusChangeLog[];
+  laboratory?: string;
+  expectedReturnDate?: string;
+  batchId?: string;
+  result?: SampleResult;
+  createdAt: number;
+}
+
+export interface InspectionBatch {
+  id: string;
+  batchNumber: string;
+  laboratory: string;
+  sampleIds: string[];
+  sentDate: string;
+  expectedReturnDate: string;
+  createdAt: number;
+}
+
 export interface ProfileData {
   cells: GridCell[];
   stratigraphies: Stratigraphy[];

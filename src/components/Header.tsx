@@ -1,7 +1,7 @@
 import { useAppStore } from '../store/useAppStore';
 import TrenchSelector from './TrenchSelector';
 
-type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'profile';
+type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile';
 
 interface HeaderProps {
   currentView: ViewType;
@@ -14,6 +14,7 @@ const viewNames: Record<ViewType, string> = {
   units: '地层单位',
   matrix: 'Harris矩阵',
   artifacts: '遗物登记',
+  samples: '样品采集与送检',
   profile: '剖面图',
 };
 
