@@ -1,0 +1,117 @@
+export type SoilType = '粘土' | '砂土' | '砾石' | '粉土' | '壤土' | '有机质土' | '生土' | '其他';
+
+export type RelationType = '叠压' | '打破' | '被打破';
+
+export interface Coordinate {
+  x: number;
+  y: number;
+}
+
+export interface GridCell {
+  id: string;
+  code: string;
+  trenchId: string;
+  row: number;
+  col: number;
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+  centerX: number;
+  centerY: number;
+}
+
+export interface Trench {
+  id: string;
+  name: string;
+  code: string;
+  description: string;
+  rows: number;
+  cols: number;
+  cellSize: number;
+  originX: number;
+  originY: number;
+  createdAt: number;
+}
+
+export interface Stratigraphy {
+  id: string;
+  cellId: string;
+  trenchId: string;
+  layerNumber: number;
+  topElevation: number;
+  bottomElevation: number;
+  soilType: SoilType;
+  munsellColor: string;
+  description: string;
+  inclusions: string;
+  unitId?: string;
+  createdAt: number;
+}
+
+export interface StratigraphicUnit {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  color: string;
+  trenchId: string;
+}
+
+export interface StratigraphicRelation {
+  id: string;
+  trenchId: string;
+  fromUnitId: string;
+  toUnitId: string;
+  type: RelationType;
+  description: string;
+}
+
+export interface Artifact {
+  id: string;
+  trenchId: string;
+  cellId: string;
+  stratigraphyId?: string;
+  unitId?: string;
+  catalogNumber: string;
+  type: string;
+  material: string;
+  description: string;
+  dimensions: string;
+  photoNumber: string;
+  x: number;
+  y: number;
+  z: number;
+  createdAt: number;
+}
+
+export interface HarrisMatrixNode {
+  id: string;
+  unitId: string;
+  label: string;
+  description: string;
+  x: number;
+  y: number;
+  level: number;
+}
+
+export interface HarrisMatrixEdge {
+  id: string;
+  fromId: string;
+  toId: string;
+  type: RelationType;
+}
+
+export interface HarrisMatrix {
+  nodes: HarrisMatrixNode[];
+  edges: HarrisMatrixEdge[];
+  hasCycle: boolean;
+  cycleNodes: string[];
+}
+
+export interface ProfileData {
+  cells: GridCell[];
+  stratigraphies: Stratigraphy[];
+  minElevation: number;
+  maxElevation: number;
+}
