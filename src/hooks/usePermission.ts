@@ -1,14 +1,21 @@
 import { useAuthStore } from '../store/useAuthStore';
 import { useAppStore } from '../store/useAppStore';
+import { useSampleStore } from '../store/useSampleStore';
 import { PermissionAction, SystemRole } from '../types';
 import { hasPermission } from '../utils';
 
 interface UsePermissionReturn {
   currentRole: SystemRole | null;
+  currentUserId: string | null;
   can: (action: PermissionAction) => boolean;
-  canAccessCell: (cellId: string) => boolean;
-  canAccessStratigraphy: (stratigraphyId: string) => boolean;
-  canAccessArtifact: (artifactId: string) => boolean;
+  canEdit: (createdBy?: string) => boolean;
+  canDelete: (createdBy?: string) => boolean;
+  canEditStratigraphy: (stratigraphyId: string) => boolean;
+  canDeleteStratigraphy: (stratigraphyId: string) => boolean;
+  canEditArtifact: (artifactId: string) => boolean;
+  canDeleteArtifact: (artifactId: string) => boolean;
+  canEditSample: (sampleId: string) => boolean;
+  canDeleteSample: (sampleId: string) => boolean;
   isAdmin: boolean;
   isLeader: boolean;
   isRecorder: boolean;
@@ -17,74 +24,117 @@ interface UsePermissionReturn {
 
 export const usePermission = (): UsePermissionReturn => {
   const currentUser = useAuthStore((state) => state.currentUser);
-  const getCellById = useAppStore((state) => state.getCellById);
-  const getStratigraphiesByCell = useAppStore((state) => state.getStratigraphiesByCell);
-  const getArtifactsByCell = useAppStore((state) => state.getArtifactsByCell);
-  const getLogsByPerson = useAppStore((state) => state.getLogsByPerson);
-
   const currentRole = currentUser?.role || null;
+  const currentUserId = currentUser?.id || null;
 
   const can = (action: PermissionAction): boolean => {
     if (!currentUser) return false;
     return hasPermission(currentUser.role, action);
   };
 
-  const getParticipatedCellIds = (): string[] => {
-    if (!currentUser?.personId) return [];
-    const logs = getLogsByPerson(currentUser.personId);
-    const cellIds = new Set<string>();
-    logs.forEach((log) => {
-      log.newlyExposedCellIds.forEach((id) => cellIds.add(id));
-    });
-    return Array.from(cellIds);
-  };
-
-  const canAccessCell = (cellId: string): boolean => {
+  const canEdit = (createdBy?: string): boolean => {
     if (!currentUser) return false;
-    if (currentUser.role === '管理员' || currentUser.role === '领队' || currentUser.role === '访客') {
+    if (currentUser.role === '管理员' || currentUser.role === '领队') {
       return true;
     }
     if (currentUser.role === '记录员') {
-      const participatedCellIds = getParticipatedCellIds();
-      return participatedCellIds.includes(cellId);
+      return createdBy === currentUser.id;
     }
     return false;
   };
 
-  const canAccessStratigraphy = (stratigraphyId: string): boolean => {
+  const canDelete = (createdBy?: string): boolean => {
     if (!currentUser) return false;
-    if (currentUser.role === '管理员' || currentUser.role === '领队' || currentUser.role === '访客') {
+    if (currentUser.role === '管理员') {
       return true;
     }
-    if (currentUser.role === '记录员') {
-      const allStratigraphies = useAppStore.getState().stratigraphies;
-      const strat = allStratigraphies.find((s) => s.id === stratigraphyId);
-      if (!strat) return false;
-      return canAccessCell(strat.cellId);
+    if (currentUser.role === '领队') {
+      return true;
     }
     return false;
   };
 
-  const canAccessArtifact = (artifactId: string): boolean => {
+  const canEditStratigraphy = (stratigraphyId: string): boolean => {
     if (!currentUser) return false;
-    if (currentUser.role === '管理员' || currentUser.role === '领队' || currentUser.role === '访客') {
+    if (currentUser.role === '管理员' || currentUser.role === '领队') {
       return true;
     }
     if (currentUser.role === '记录员') {
-      const allArtifacts = useAppStore.getState().artifacts;
-      const artifact = allArtifacts.find((a) => a.id === artifactId);
-      if (!artifact) return false;
-      return canAccessCell(artifact.cellId);
+      const strat = useAppStore.getState().stratigraphies.find((s) => s.id === stratigraphyId);
+      return strat?.createdBy === currentUser.id;
+    }
+    return false;
+  };
+
+  const canDeleteStratigraphy = (stratigraphyId: string): boolean => {
+    if (!currentUser) return false;
+    if (currentUser.role === '管理员') {
+      return true;
+    }
+    if (currentUser.role === '领队') {
+      return true;
+    }
+    return false;
+  };
+
+  const canEditArtifact = (artifactId: string): boolean => {
+    if (!currentUser) return false;
+    if (currentUser.role === '管理员' || currentUser.role === '领队') {
+      return true;
+    }
+    if (currentUser.role === '记录员') {
+      const artifact = useAppStore.getState().artifacts.find((a) => a.id === artifactId);
+      return artifact?.createdBy === currentUser.id;
+    }
+    return false;
+  };
+
+  const canDeleteArtifact = (artifactId: string): boolean => {
+    if (!currentUser) return false;
+    if (currentUser.role === '管理员') {
+      return true;
+    }
+    if (currentUser.role === '领队') {
+      return true;
+    }
+    return false;
+  };
+
+  const canEditSample = (sampleId: string): boolean => {
+    if (!currentUser) return false;
+    if (currentUser.role === '管理员' || currentUser.role === '领队') {
+      return true;
+    }
+    if (currentUser.role === '记录员') {
+      const sample = useSampleStore.getState().samples.find((s) => s.id === sampleId);
+      return sample?.createdBy === currentUser.id;
+    }
+    return false;
+  };
+
+  const canDeleteSample = (sampleId: string): boolean => {
+    if (!currentUser) return false;
+    if (currentUser.role === '管理员') {
+      return true;
+    }
+    if (currentUser.role === '领队') {
+      return true;
     }
     return false;
   };
 
   return {
     currentRole,
+    currentUserId,
     can,
-    canAccessCell,
-    canAccessStratigraphy,
-    canAccessArtifact,
+    canEdit,
+    canDelete,
+    canEditStratigraphy,
+    canDeleteStratigraphy,
+    canEditArtifact,
+    canDeleteArtifact,
+    canEditSample,
+    canDeleteSample,
     isAdmin: currentRole === '管理员',
     isLeader: currentRole === '领队',
     isRecorder: currentRole === '记录员',

@@ -9,56 +9,21 @@ import {
   StatusChangeLog,
   SAMPLE_STATUS_ORDER,
   SAMPLE_TYPE_PREFIX,
-  PermissionAction,
-  TargetType,
 } from '../types';
-import { generateId, hasPermission } from '../utils';
-
-const getAuthState = () => {
-  const authState = JSON.parse(localStorage.getItem('archaeology-auth-storage') || '{}');
-  return authState.state || { currentUser: null };
-};
-
-const checkPermission = (action: PermissionAction): boolean => {
-  const auth = getAuthState();
-  if (!auth.currentUser) return false;
-  return hasPermission(auth.currentUser.role, action);
-};
-
-const logOperation = (
-  operation: 'create' | 'update' | 'delete',
-  targetType: TargetType,
-  targetId: string,
-  targetName: string | undefined,
-  details: string
-) => {
-  const auth = getAuthState();
-  if (!auth.currentUser) return;
-
-  const log = {
-    id: generateId(),
-    userId: auth.currentUser.id,
-    username: auth.currentUser.username,
-    operation,
-    targetType,
-    targetId,
-    targetName,
-    details,
-    timestamp: Date.now(),
-  };
-
-  const authStorage = JSON.parse(localStorage.getItem('archaeology-auth-storage') || '{}');
-  if (!authStorage.state) authStorage.state = {};
-  if (!authStorage.state.operationLogs) authStorage.state.operationLogs = [];
-  authStorage.state.operationLogs.push(log);
-  localStorage.setItem('archaeology-auth-storage', JSON.stringify(authStorage));
-};
+import { generateId } from '../utils';
+import {
+  checkActionPermission,
+  canEditOwnData,
+  canDeleteOwnData,
+  logOperationToStorage,
+  getCurrentUserId,
+} from '../utils/auth';
 
 interface SampleState {
   samples: Sample[];
   batches: InspectionBatch[];
 
-  addSample: (data: Omit<Sample, 'id' | 'sampleNumber' | 'status' | 'statusHistory' | 'createdAt'>) => Sample;
+  addSample: (data: Omit<Sample, 'id' | 'sampleNumber' | 'status' | 'statusHistory' | 'createdAt' | 'createdBy'>) => Sample;
   updateSample: (id: string, data: Partial<Sample>) => void;
   deleteSample: (id: string) => void;
 
@@ -101,9 +66,10 @@ export const useSampleStore = create<SampleState>()(
       },
 
       addSample: (data) => {
-        if (!checkPermission('sample:create')) {
+        if (!checkActionPermission('sample:create')) {
           throw new Error('没有权限添加样品');
         }
+        const currentUserId = getCurrentUserId();
         const sampleNumber = get().getNextSampleNumber(data.type);
         const now = Date.now();
         const sample: Sample = {
@@ -111,6 +77,7 @@ export const useSampleStore = create<SampleState>()(
           id: generateId(),
           sampleNumber,
           status: '采集',
+          createdBy: currentUserId || undefined,
           statusHistory: [{
             from: '采集' as SampleStatus,
             to: '采集' as SampleStatus,
@@ -122,18 +89,33 @@ export const useSampleStore = create<SampleState>()(
         set((state) => ({
           samples: [...state.samples, sample],
         }));
-        logOperation('create', 'sample', sample.id, sample.sampleNumber, `添加样品: ${sample.sampleNumber} (${sample.type}), 采集人: ${sample.collector}`);
+        logOperationToStorage({
+          operation: 'create',
+          targetType: 'sample',
+          targetId: sample.id,
+          targetName: sample.sampleNumber,
+          details: `添加样品: ${sample.sampleNumber} (${sample.type}), 采集人: ${sample.collector}`,
+        });
         return sample;
       },
 
       updateSample: (id, data) => {
-        if (!checkPermission('sample:edit')) {
-          throw new Error('没有权限编辑样品');
-        }
         const sample = get().samples.find((s) => s.id === id);
         if (!sample) return;
+        if (!canEditOwnData(sample.createdBy)) {
+          throw new Error('没有权限编辑此样品（只能编辑自己录入的）');
+        }
+        if (!checkActionPermission('sample:edit')) {
+          throw new Error('没有权限编辑样品');
+        }
         const changes = Object.keys(data).map((k) => `${k}: ${sample[k as keyof typeof sample]} → ${data[k as keyof typeof data]}`).join(', ');
-        logOperation('update', 'sample', id, sample.sampleNumber, `更新样品: ${sample.sampleNumber}, ${changes}`);
+        logOperationToStorage({
+          operation: 'update',
+          targetType: 'sample',
+          targetId: id,
+          targetName: sample.sampleNumber,
+          details: `更新样品: ${sample.sampleNumber}, ${changes}`,
+        });
         if (sample.status === '检测中') {
           const allowedKeys = ['status', 'statusHistory', 'result', 'laboratory', 'expectedReturnDate', 'batchId'];
           const filtered: Partial<Sample> = {};
@@ -157,11 +139,18 @@ export const useSampleStore = create<SampleState>()(
       },
 
       deleteSample: (id) => {
-        if (!checkPermission('sample:delete')) {
-          throw new Error('没有权限删除样品');
-        }
         const sample = get().samples.find((s) => s.id === id);
-        logOperation('delete', 'sample', id, sample?.sampleNumber, `删除样品: ${sample?.sampleNumber || id}`);
+        if (!sample) return;
+        if (!canDeleteOwnData(sample.createdBy)) {
+          throw new Error('没有权限删除此样品');
+        }
+        logOperationToStorage({
+          operation: 'delete',
+          targetType: 'sample',
+          targetId: id,
+          targetName: sample.sampleNumber,
+          details: `删除样品: ${sample.sampleNumber}`,
+        });
         set((state) => ({
           samples: state.samples.filter((s) => s.id !== id),
           batches: state.batches.map((b) => ({
@@ -303,11 +292,11 @@ export const useSampleStore = create<SampleState>()(
         return get().samples.filter((s) => s.trenchId === trenchId);
       },
 
-      getSamplesByCell: (cellId) => {
+      getSamplesByCell: (cellId: string) => {
         return get().samples.filter((s) => s.cellId === cellId);
       },
 
-      getSamplesByUnit: (unitId) => {
+      getSamplesByUnit: (unitId: string) => {
         return get().samples.filter((s) => s.unitId === unitId);
       },
 

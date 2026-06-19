@@ -46,6 +46,7 @@ export interface Stratigraphy {
   description: string;
   inclusions: string;
   unitId?: string;
+  createdBy?: string;
   createdAt: number;
 }
 
@@ -82,6 +83,7 @@ export interface Artifact {
   x: number;
   y: number;
   z: number;
+  createdBy?: string;
   createdAt: number;
 }
 
@@ -151,6 +153,7 @@ export interface Sample {
   expectedReturnDate?: string;
   batchId?: string;
   result?: SampleResult;
+  createdBy?: string;
   createdAt: number;
 }
 
