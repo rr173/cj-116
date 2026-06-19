@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { useSampleStore } from '../store/useSampleStore';
 import { checkElevationContinuity } from '../utils';
 import { RelationType } from '../types';
 
@@ -16,6 +17,9 @@ export default function UnitsPanel() {
   );
   const cells = useAppStore((state) =>
     state.cells.filter((c) => c.trenchId === selectedTrenchId)
+  );
+  const samples = useSampleStore((state) =>
+    state.samples.filter((s) => s.trenchId === selectedTrenchId)
   );
 
   const createUnit = useAppStore((state) => state.createUnit);
@@ -76,6 +80,10 @@ export default function UnitsPanel() {
 
   const getCellCode = (cellId: string) => {
     return cells.find((c) => c.id === cellId)?.code || '-';
+  };
+
+  const getSamplesForUnit = (unitId: string) => {
+    return samples.filter((s) => s.unitId === unitId);
   };
 
   const handleAssignStrat = (stratId: string, unitId: string) => {
@@ -235,6 +243,64 @@ export default function UnitsPanel() {
                         </button>
                       </div>
                     ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-gray-700">关联样品检测结果</label>
+                    <span className="text-xs text-gray-500">
+                      {getSamplesForUnit(selectedUnit.id).length} 个样品
+                    </span>
+                  </div>
+                  <div className="space-y-2 max-h-64 overflow-auto">
+                    {getSamplesForUnit(selectedUnit.id).length === 0 ? (
+                      <p className="text-sm text-gray-400 text-center py-2">暂无关联样品</p>
+                    ) : (
+                      getSamplesForUnit(selectedUnit.id).map((sample) => (
+                        <div
+                          key={sample.id}
+                          className="p-2 bg-gray-50 rounded-lg text-sm"
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-medium text-gray-700">
+                              {sample.sampleNumber}
+                            </span>
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                              {sample.type}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 mb-1">
+                            状态: {sample.status} · 采集人: {sample.collector}
+                            {sample.laboratory && ` · 实验室: ${sample.laboratory}`}
+                          </div>
+                          {sample.result ? (
+                            <div className="mt-2 p-2 bg-white rounded border border-gray-200">
+                              <div className="text-xs font-medium text-green-700 mb-1">检测结果</div>
+                              {Object.entries(sample.result.values).length > 0 && (
+                                <div className="grid grid-cols-2 gap-1 text-xs text-gray-600 mb-1">
+                                  {Object.entries(sample.result.values).map(([k, v]) => (
+                                    <div key={k}>
+                                      <span className="text-gray-500">{k}:</span>
+                                      <span className="ml-1 font-medium text-gray-700">{v}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {sample.result.description && (
+                                <p className="text-xs text-gray-600">
+                                  {sample.result.description}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-orange-600">
+                              暂无检测结果
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>

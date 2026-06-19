@@ -42,7 +42,7 @@ const RESULT_FIELDS: Record<SampleType, { label: string; key: string }[]> = {
   ],
 };
 
-type ModalMode = 'add' | 'advance' | 'batch' | 'result' | null;
+type ModalMode = 'add' | 'edit' | 'advance' | 'batch' | 'result' | null;
 
 export default function SamplesPanel() {
   const selectedTrenchId = useAppStore((state) => state.selectedTrenchId);
@@ -61,6 +61,7 @@ export default function SamplesPanel() {
   );
   const batches = useSampleStore((state) => state.batches);
   const addSample = useSampleStore((state) => state.addSample);
+  const updateSample = useSampleStore((state) => state.updateSample);
   const deleteSample = useSampleStore((state) => state.deleteSample);
   const advanceStatus = useSampleStore((state) => state.advanceStatus);
   const fillResult = useSampleStore((state) => state.fillResult);
@@ -101,6 +102,18 @@ export default function SamplesPanel() {
     description: '',
     values: {} as Record<string, number>,
   });
+
+  const [editForm, setEditForm] = useState({
+    cellId: '',
+    stratigraphyId: '',
+    unitId: '',
+    type: '碳十四测年' as SampleType,
+    collector: '',
+    collectedAt: new Date().toISOString().slice(0, 16),
+  });
+
+  const [advanceError, setAdvanceError] = useState<string | null>(null);
+  const [batchError, setBatchError] = useState<string | null>(null);
 
   const overdueSamples = getOverdueSamples();
   const overdueIds = new Set(overdueSamples.map((s) => s.id));
@@ -171,6 +184,25 @@ export default function SamplesPanel() {
     });
   };
 
+  const handleEditCellChange = (cellId: string) => {
+    const cellStrats = stratigraphies.filter((s) => s.cellId === cellId);
+    setEditForm({
+      ...editForm,
+      cellId,
+      stratigraphyId: cellStrats[0]?.id || '',
+      unitId: cellStrats[0]?.unitId || '',
+    });
+  };
+
+  const handleEditStratChange = (stratId: string) => {
+    const strat = stratigraphies.find((s) => s.id === stratId);
+    setEditForm({
+      ...editForm,
+      stratigraphyId: stratId,
+      unitId: strat?.unitId || '',
+    });
+  };
+
   const handleSubmitAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTrenchId || !addForm.collector) return;
@@ -183,10 +215,46 @@ export default function SamplesPanel() {
     setModalMode(null);
   };
 
+  const handleOpenEdit = (sampleId: string) => {
+    const sample = samples.find((s) => s.id === sampleId);
+    if (!sample) return;
+    setSelectedSampleId(sampleId);
+    const collectedIso = new Date(sample.collectedAt).toISOString().slice(0, 16);
+    setEditForm({
+      cellId: sample.cellId,
+      stratigraphyId: sample.stratigraphyId,
+      unitId: sample.unitId || '',
+      type: sample.type,
+      collector: sample.collector,
+      collectedAt: collectedIso,
+    });
+    setModalMode('edit');
+  };
+
+  const handleSubmitEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSampleId) return;
+    updateSample(selectedSampleId, {
+      cellId: editForm.cellId,
+      stratigraphyId: editForm.stratigraphyId,
+      unitId: editForm.unitId || undefined,
+      type: editForm.type,
+      collector: editForm.collector,
+      collectedAt: new Date(editForm.collectedAt).getTime(),
+    });
+    setModalMode(null);
+    setSelectedSampleId(null);
+  };
+
   const handleOpenAdvance = (sampleId: string) => {
     setSelectedSampleId(sampleId);
-    setAdvanceForm({ laboratory: '', expectedReturnDate: '' });
+    const sample = samples.find((s) => s.id === sampleId);
+    setAdvanceForm({
+      laboratory: sample?.laboratory || '',
+      expectedReturnDate: sample?.expectedReturnDate || '',
+    });
     setOperator('');
+    setAdvanceError(null);
     setModalMode('advance');
   };
 
@@ -200,9 +268,18 @@ export default function SamplesPanel() {
       nextStatus === '送检'
         ? { laboratory: advanceForm.laboratory, expectedReturnDate: advanceForm.expectedReturnDate }
         : undefined;
-    advanceStatus(selectedSampleId, operator, extra);
+    const ok = advanceStatus(selectedSampleId, operator, extra);
+    if (!ok) {
+      if (nextStatus === '送检') {
+        setAdvanceError('送检必须填写实验室名称和预计返回日期');
+      } else {
+        setAdvanceError('状态流转失败');
+      }
+      return;
+    }
     setModalMode(null);
     setSelectedSampleId(null);
+    setAdvanceError(null);
   };
 
   const handleOpenBatch = () => {
@@ -212,6 +289,7 @@ export default function SamplesPanel() {
       sentDate: new Date().toISOString().slice(0, 10),
       expectedReturnDate: '',
     });
+    setBatchError(null);
     setModalMode('batch');
   };
 
@@ -226,17 +304,31 @@ export default function SamplesPanel() {
 
   const handleSubmitBatch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedForBatch.size === 0 || !batchForm.laboratory || !batchForm.expectedReturnDate) return;
+    if (selectedForBatch.size === 0) {
+      setBatchError('请至少选择一个样品');
+      return;
+    }
+    if (!batchForm.laboratory.trim()) {
+      setBatchError('请填写送检实验室名称');
+      return;
+    }
+    if (!batchForm.expectedReturnDate.trim()) {
+      setBatchError('请填写预计返回日期');
+      return;
+    }
     const result = createBatch({
       laboratory: batchForm.laboratory,
       sampleIds: Array.from(selectedForBatch),
       sentDate: batchForm.sentDate,
       expectedReturnDate: batchForm.expectedReturnDate,
     });
-    if (result) {
-      setModalMode(null);
-      setSelectedForBatch(new Set());
+    if (!result) {
+      setBatchError('送检失败：某些样品可能已存在未归档的批次');
+      return;
     }
+    setModalMode(null);
+    setSelectedForBatch(new Set());
+    setBatchError(null);
   };
 
   const handleOpenResult = (sampleId: string) => {
@@ -405,20 +497,41 @@ export default function SamplesPanel() {
                         {sample.laboratory || '-'}
                       </td>
                       <td className="px-4 py-3 text-right space-x-2">
-                        {sample.status !== '归档' && getNextStatusLabel(sample.status) && (
-                          <button
-                            onClick={() => handleOpenAdvance(sample.id)}
-                            className="text-blue-600 hover:text-blue-700"
-                          >
-                            {getNextStatusLabel(sample.status)}
-                          </button>
+                        {sample.status !== '归档' && (
+                          sample.status === '检测中' ? (
+                            <span className="text-gray-400 text-xs" title="检测中不可编辑">编辑</span>
+                          ) : (
+                            <button
+                              onClick={() => handleOpenEdit(sample.id)}
+                              className="text-gray-600 hover:text-gray-800"
+                            >
+                              编辑
+                            </button>
+                          )
                         )}
-                        {(sample.status === '检测中' || sample.status === '结果回填') && (
+                        {sample.status !== '归档' && getNextStatusLabel(sample.status) && (
+                          sample.status === '检测中' && getNextStatusLabel(sample.status) === '结果回填' ? (
+                            <button
+                              onClick={() => handleOpenResult(sample.id)}
+                              className="text-green-600 hover:text-green-700"
+                            >
+                              回填
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleOpenAdvance(sample.id)}
+                              className="text-blue-600 hover:text-blue-700"
+                            >
+                              {getNextStatusLabel(sample.status)}
+                            </button>
+                          )
+                        )}
+                        {(sample.status === '结果回填') && (
                           <button
                             onClick={() => handleOpenResult(sample.id)}
                             className="text-green-600 hover:text-green-700"
                           >
-                            回填
+                            查看结果
                           </button>
                         )}
                         {sample.status === '采集' && (
@@ -689,6 +802,180 @@ export default function SamplesPanel() {
         </div>
       )}
 
+      {modalMode === 'edit' && selectedSample && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">编辑样品</h3>
+                {selectedSample.status === '检测中' && (
+                  <p className="text-xs text-orange-600 mt-0.5">检测中状态下基础字段已锁定</p>
+                )}
+              </div>
+              <button
+                onClick={() => { setModalMode(null); setSelectedSampleId(null); }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleSubmitEdit} className="p-6 space-y-4 overflow-y-auto max-h-[calc(90vh-80px)]">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">样品编号</label>
+                  <input
+                    type="text"
+                    value={selectedSample.sampleNumber}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">当前状态</label>
+                  <div className="px-3 py-2">
+                    <span className={`px-3 py-1 rounded-full text-sm ${STATUS_COLORS[selectedSample.status]}`}>
+                      {selectedSample.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">样品类型</label>
+                  <select
+                    value={editForm.type}
+                    onChange={(e) => setEditForm({ ...editForm, type: e.target.value as SampleType })}
+                    disabled={selectedSample.status === '检测中'}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-earth-500 focus:border-earth-500 outline-none ${selectedSample.status === '检测中' ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                  >
+                    {SAMPLE_TYPES.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">采集人</label>
+                  <input
+                    type="text"
+                    value={editForm.collector}
+                    onChange={(e) => setEditForm({ ...editForm, collector: e.target.value })}
+                    disabled={selectedSample.status === '检测中'}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-earth-500 focus:border-earth-500 outline-none ${selectedSample.status === '检测中' ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">采集方格</label>
+                  <select
+                    value={editForm.cellId}
+                    onChange={(e) => handleEditCellChange(e.target.value)}
+                    disabled={selectedSample.status === '检测中'}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-earth-500 focus:border-earth-500 outline-none ${selectedSample.status === '检测中' ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                    required
+                  >
+                    <option value="">请选择</option>
+                    {cells.map((c) => (
+                      <option key={c.id} value={c.id}>{c.code}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">采集层位</label>
+                  <select
+                    value={editForm.stratigraphyId}
+                    onChange={(e) => handleEditStratChange(e.target.value)}
+                    disabled={selectedSample.status === '检测中'}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-earth-500 focus:border-earth-500 outline-none ${selectedSample.status === '检测中' ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                    required
+                  >
+                    <option value="">请选择</option>
+                    {stratigraphies
+                      .filter((s) => s.cellId === editForm.cellId)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          第{s.layerNumber}层 ({s.soilType})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">地层单位</label>
+                  <select
+                    value={editForm.unitId}
+                    onChange={(e) => setEditForm({ ...editForm, unitId: e.target.value })}
+                    disabled={selectedSample.status === '检测中'}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-earth-500 focus:border-earth-500 outline-none ${selectedSample.status === '检测中' ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                  >
+                    <option value="">未分类</option>
+                    {units.map((u) => (
+                      <option key={u.id} value={u.id}>{u.code} - {u.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">采集时间</label>
+                <input
+                  type="datetime-local"
+                  value={editForm.collectedAt}
+                  onChange={(e) => setEditForm({ ...editForm, collectedAt: e.target.value })}
+                  disabled={selectedSample.status === '检测中'}
+                  className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-earth-500 focus:border-earth-500 outline-none ${selectedSample.status === '检测中' ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                  required
+                />
+              </div>
+
+              {selectedSample.laboratory && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">送检实验室</label>
+                    <input
+                      type="text"
+                      value={selectedSample.laboratory}
+                      disabled
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">预计返回日期</label>
+                    <input
+                      type="text"
+                      value={selectedSample.expectedReturnDate || ''}
+                      disabled
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setModalMode(null); setSelectedSampleId(null); }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={selectedSample.status === '检测中'}
+                  className={`flex-1 px-4 py-2 bg-earth-600 text-white rounded-lg hover:bg-earth-700 transition-colors ${selectedSample.status === '检测中' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  保存
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {modalMode === 'advance' && selectedSample && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
@@ -724,7 +1011,9 @@ export default function SamplesPanel() {
               {getNextStatusLabel(selectedSample.status) === '送检' && (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">送检实验室</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      送检实验室 <span className="text-red-500">*</span>
+                    </label>
                     <input
                       type="text"
                       value={advanceForm.laboratory}
@@ -734,7 +1023,9 @@ export default function SamplesPanel() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">预计返回日期</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      预计返回日期 <span className="text-red-500">*</span>
+                    </label>
                     <input
                       type="date"
                       value={advanceForm.expectedReturnDate}
@@ -744,6 +1035,12 @@ export default function SamplesPanel() {
                     />
                   </div>
                 </>
+              )}
+
+              {advanceError && (
+                <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+                  {advanceError}
+                </div>
               )}
 
               <div className="flex gap-3 pt-2">
@@ -783,7 +1080,9 @@ export default function SamplesPanel() {
             <form onSubmit={handleSubmitBatch} className="p-6 space-y-4 overflow-y-auto max-h-[calc(90vh-80px)]">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">送检实验室</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    送检实验室 <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
                     value={batchForm.laboratory}
@@ -804,7 +1103,9 @@ export default function SamplesPanel() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">预计返回日期</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  预计返回日期 <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="date"
                   value={batchForm.expectedReturnDate}
@@ -813,6 +1114,12 @@ export default function SamplesPanel() {
                   required
                 />
               </div>
+
+              {batchError && (
+                <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+                  {batchError}
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">

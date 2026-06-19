@@ -81,11 +81,28 @@ export const useSampleStore = create<SampleState>()(
       },
 
       updateSample: (id, data) => {
-        set((state) => ({
-          samples: state.samples.map((s) =>
-            s.id === id ? { ...s, ...data } : s
-          ),
-        }));
+        const sample = get().samples.find((s) => s.id === id);
+        if (!sample) return;
+        if (sample.status === '检测中') {
+          const allowedKeys = ['status', 'statusHistory', 'result', 'laboratory', 'expectedReturnDate', 'batchId'];
+          const filtered: Partial<Sample> = {};
+          for (const key of allowedKeys as (keyof Sample)[]) {
+            if (key in data) {
+              (filtered as any)[key] = (data as any)[key];
+            }
+          }
+          set((state) => ({
+            samples: state.samples.map((s) =>
+              s.id === id ? { ...s, ...filtered } : s
+            ),
+          }));
+        } else {
+          set((state) => ({
+            samples: state.samples.map((s) =>
+              s.id === id ? { ...s, ...data } : s
+            ),
+          }));
+        }
       },
 
       deleteSample: (id) => {
@@ -106,6 +123,12 @@ export const useSampleStore = create<SampleState>()(
         if (currentIndex >= SAMPLE_STATUS_ORDER.length - 1) return false;
 
         const nextStatus = SAMPLE_STATUS_ORDER[currentIndex + 1];
+
+        if (nextStatus === '送检') {
+          if (!extra?.laboratory || !extra.laboratory.trim()) return false;
+          if (!extra?.expectedReturnDate || !extra.expectedReturnDate.trim()) return false;
+        }
+
         const log: StatusChangeLog = {
           from: sample.status,
           to: nextStatus,
@@ -118,9 +141,9 @@ export const useSampleStore = create<SampleState>()(
           statusHistory: [...sample.statusHistory, log],
         };
 
-        if (nextStatus === '送检' && extra?.laboratory) {
-          updates.laboratory = extra.laboratory;
-          updates.expectedReturnDate = extra.expectedReturnDate;
+        if (nextStatus === '送检') {
+          updates.laboratory = extra!.laboratory!.trim();
+          updates.expectedReturnDate = extra!.expectedReturnDate!.trim();
         }
 
         set((state) => ({
@@ -160,6 +183,10 @@ export const useSampleStore = create<SampleState>()(
 
       createBatch: (data) => {
         const { laboratory, sampleIds, sentDate, expectedReturnDate } = data;
+
+        if (!laboratory.trim()) return null;
+        if (!expectedReturnDate.trim()) return null;
+        if (sampleIds.length === 0) return null;
 
         for (const sid of sampleIds) {
           const sample = get().samples.find((s) => s.id === sid);
