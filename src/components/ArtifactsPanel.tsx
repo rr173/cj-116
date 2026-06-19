@@ -16,7 +16,7 @@ const MATERIALS = [
 const defaultFilters: FilterState = {
   types: [],
   materials: [],
-  unitIds: [],
+  layerNumbers: [],
   cellIds: [],
   keyword: '',
 };
@@ -66,7 +66,7 @@ export default function ArtifactsPanel() {
   const hasAdvancedFilters = 
     advancedFilters.types.length > 0 ||
     advancedFilters.materials.length > 0 ||
-    advancedFilters.unitIds.length > 0 ||
+    advancedFilters.layerNumbers.length > 0 ||
     advancedFilters.cellIds.length > 0 ||
     advancedFilters.keyword.length > 0;
 
@@ -82,7 +82,11 @@ export default function ArtifactsPanel() {
       result = result.filter((a) => {
         if (advancedFilters.types.length > 0 && !advancedFilters.types.includes(a.type)) return false;
         if (advancedFilters.materials.length > 0 && !advancedFilters.materials.includes(a.material)) return false;
-        if (advancedFilters.unitIds.length > 0 && !advancedFilters.unitIds.includes(a.unitId || '')) return false;
+        if (advancedFilters.layerNumbers.length > 0) {
+          if (!a.stratigraphyId) return false;
+          const strat = stratigraphies.find((s) => s.id === a.stratigraphyId);
+          if (!strat || !advancedFilters.layerNumbers.includes(strat.layerNumber)) return false;
+        }
         if (advancedFilters.cellIds.length > 0 && !advancedFilters.cellIds.includes(a.cellId)) return false;
         if (advancedFilters.keyword) {
           const kw = advancedFilters.keyword.toLowerCase();
@@ -245,7 +249,7 @@ export default function ArtifactsPanel() {
     (hasAdvancedFilters ? (
       advancedFilters.types.length +
       advancedFilters.materials.length +
-      advancedFilters.unitIds.length +
+      advancedFilters.layerNumbers.length +
       advancedFilters.cellIds.length +
       (advancedFilters.keyword ? 1 : 0)
     ) : 0);
@@ -302,7 +306,7 @@ export default function ArtifactsPanel() {
             高级检索
             {hasAdvancedFilters && (
               <span className="px-1.5 py-0.5 bg-earth-600 text-white text-xs rounded-full">
-                {advancedFilters.types.length + advancedFilters.materials.length + advancedFilters.unitIds.length + advancedFilters.cellIds.length + (advancedFilters.keyword ? 1 : 0)}
+                {advancedFilters.types.length + advancedFilters.materials.length + advancedFilters.layerNumbers.length + advancedFilters.cellIds.length + (advancedFilters.keyword ? 1 : 0)}
               </span>
             )}
           </button>
@@ -356,9 +360,9 @@ export default function ArtifactsPanel() {
                 材质 ×{advancedFilters.materials.length}
               </span>
             )}
-            {advancedFilters.unitIds.length > 0 && (
+            {advancedFilters.layerNumbers.length > 0 && (
               <span className="px-2 py-0.5 bg-white border border-earth-300 rounded text-earth-700">
-                地层单位 ×{advancedFilters.unitIds.length}
+                层位 ×{advancedFilters.layerNumbers.length}
               </span>
             )}
             {advancedFilters.cellIds.length > 0 && (

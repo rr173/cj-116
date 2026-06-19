@@ -286,7 +286,9 @@ export const validateImportRows = (
       } else {
         validated.cellId = cell.id;
         
-        if (row.layerNumber.trim()) {
+        if (!row.layerNumber.trim()) {
+          errors.push('出土层号不能为空');
+        } else {
           const layerNum = parseInt(row.layerNumber, 10);
           if (isNaN(layerNum)) {
             errors.push(`层号"${row.layerNumber}"不是有效数字`);

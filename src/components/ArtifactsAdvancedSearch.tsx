@@ -15,7 +15,7 @@ const MATERIALS = [
 interface FilterState {
   types: string[];
   materials: string[];
-  unitIds: string[];
+  layerNumbers: number[];
   cellIds: string[];
   keyword: string;
 }
@@ -41,11 +41,21 @@ export default function ArtifactsAdvancedSearch({ filters, onFiltersChange, onCl
     state.artifacts.filter((a) => a.trenchId === selectedTrenchId)
   );
 
+  const availableLayerNumbers = useMemo(() => {
+    const nums = new Set<number>();
+    stratigraphies.forEach((s) => nums.add(s.layerNumber));
+    return Array.from(nums).sort((a, b) => a - b);
+  }, [stratigraphies]);
+
   const filteredArtifacts = useMemo(() => {
     return artifacts.filter((a: Artifact) => {
       if (filters.types.length > 0 && !filters.types.includes(a.type)) return false;
       if (filters.materials.length > 0 && !filters.materials.includes(a.material)) return false;
-      if (filters.unitIds.length > 0 && !filters.unitIds.includes(a.unitId || '')) return false;
+      if (filters.layerNumbers.length > 0) {
+        if (!a.stratigraphyId) return false;
+        const strat = stratigraphies.find((s) => s.id === a.stratigraphyId);
+        if (!strat || !filters.layerNumbers.includes(strat.layerNumber)) return false;
+      }
       if (filters.cellIds.length > 0 && !filters.cellIds.includes(a.cellId)) return false;
       if (filters.keyword) {
         const kw = filters.keyword.toLowerCase();
@@ -63,16 +73,20 @@ export default function ArtifactsAdvancedSearch({ filters, onFiltersChange, onCl
       }
       return true;
     });
-  }, [artifacts, filters, cells]);
+  }, [artifacts, filters, cells, stratigraphies]);
 
   const toggleItem = (arr: string[], item: string): string[] => {
+    return arr.includes(item) ? arr.filter((i) => i !== item) : [...arr, item];
+  };
+
+  const toggleLayerNumber = (arr: number[], item: number): number[] => {
     return arr.includes(item) ? arr.filter((i) => i !== item) : [...arr, item];
   };
 
   const activeCount = 
     filters.types.length + 
     filters.materials.length + 
-    filters.unitIds.length + 
+    filters.layerNumbers.length + 
     filters.cellIds.length + 
     (filters.keyword ? 1 : 0);
 
@@ -86,7 +100,7 @@ export default function ArtifactsAdvancedSearch({ filters, onFiltersChange, onCl
     onFiltersChange({
       types: [],
       materials: [],
-      unitIds: [],
+      layerNumbers: [],
       cellIds: [],
       keyword: '',
     });
@@ -167,28 +181,23 @@ export default function ArtifactsAdvancedSearch({ filters, onFiltersChange, onCl
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              出土地层单位 {filters.unitIds.length > 0 && <span className="text-earth-600 text-xs">({filters.unitIds.length}项已选)</span>}
+              出土层位 {filters.layerNumbers.length > 0 && <span className="text-earth-600 text-xs">({filters.layerNumbers.length}项已选)</span>}
             </label>
-            {units.length === 0 ? (
-              <p className="text-sm text-gray-400">暂未创建地层单位</p>
+            {availableLayerNumbers.length === 0 ? (
+              <p className="text-sm text-gray-400">暂未录入地层信息</p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {units.map((u) => (
+                {availableLayerNumbers.map((n) => (
                   <button
-                    key={u.id}
-                    onClick={() => onFiltersChange({ ...filters, unitIds: toggleItem(filters.unitIds, u.id) })}
-                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors flex items-center gap-2 ${
-                      filters.unitIds.includes(u.id)
-                        ? 'text-white border-transparent'
+                    key={n}
+                    onClick={() => onFiltersChange({ ...filters, layerNumbers: toggleLayerNumber(filters.layerNumbers, n) })}
+                    className={`px-4 py-1.5 text-sm rounded-full border transition-colors ${
+                      filters.layerNumbers.includes(n)
+                        ? 'bg-earth-600 text-white border-earth-600'
                         : 'bg-white text-gray-600 border-gray-300 hover:border-earth-400'
                     }`}
-                    style={filters.unitIds.includes(u.id) ? { backgroundColor: u.color, borderColor: u.color } : {}}
                   >
-                    <span
-                      className="w-3 h-3 rounded"
-                      style={{ backgroundColor: u.color }}
-                    />
-                    {u.code} - {u.name}
+                    第{n}层
                   </button>
                 ))}
               </div>

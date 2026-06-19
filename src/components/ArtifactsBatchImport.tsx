@@ -31,15 +31,32 @@ export default function ArtifactsBatchImport({ onClose }: Props) {
   const [importedCount, setImportedCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [fileParsing, setFileParsing] = useState(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      setInputText(text);
-    };
-    reader.readAsText(file);
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    setFileParsing(true);
+    try {
+      if (ext === 'xlsx' || ext === 'xls') {
+        const XLSX = await import('xlsx');
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const csv = XLSX.utils.sheet_to_csv(sheet);
+        setInputText(csv);
+      } else {
+        const text = await file.text();
+        setInputText(text);
+      }
+    } finally {
+      setFileParsing(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const handleParse = () => {
@@ -104,7 +121,7 @@ export default function ArtifactsBatchImport({ onClose }: Props) {
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
           <div className="space-y-2">
             <p className="text-sm text-gray-600">
-              上传CSV/Excel文件，或直接粘贴表格数据（支持从Excel复制粘贴）。
+              上传CSV或Excel文件，或直接粘贴表格数据（支持从Excel复制粘贴）。
             </p>
             <p className="text-xs text-gray-500">
               必需列：出土方格编号、出土层号、类型、材质、尺寸描述、照片编号、平面X、平面Y、标高Z
@@ -113,14 +130,15 @@ export default function ArtifactsBatchImport({ onClose }: Props) {
           <div className="flex gap-3">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+              disabled={fileParsing}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm disabled:opacity-50"
             >
-              上传文件
+              {fileParsing ? '解析中...' : '上传文件'}
             </button>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv,.txt"
+              accept=".csv,.txt,.xlsx,.xls"
               onChange={handleFileUpload}
               className="hidden"
             />
