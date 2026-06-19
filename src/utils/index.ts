@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { GridCell, Trench, Stratigraphy, StratigraphicUnit, StratigraphicRelation, Artifact, RelationType } from '../types';
+import { GridCell, Trench, Stratigraphy, StratigraphicUnit, StratigraphicRelation, Artifact, RelationType, TimeSlot, ExcavationLog, WeatherType } from '../types';
 
 export const generateId = (): string => uuidv4();
 
@@ -405,4 +405,150 @@ export const downloadCSV = (content: string, filename: string) => {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+};
+
+export const formatDate = (d: Date | number | string): string => {
+  const date = typeof d === 'string' ? new Date(d) : new Date(d);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const getTodayDate = (): string => formatDate(new Date());
+
+export const timeToMinutes = (time: string): number => {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+};
+
+export const minutesToHours = (minutes: number): number => {
+  return Math.round((minutes / 60) * 100) / 100;
+};
+
+export const formatDuration = (minutes: number): string => {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours === 0) return `${mins}分钟`;
+  if (mins === 0) return `${hours}小时`;
+  return `${hours}小时${mins}分钟`;
+};
+
+export const calculateSlotDuration = (slot: TimeSlot): number => {
+  const start = timeToMinutes(slot.startTime);
+  const end = timeToMinutes(slot.endTime);
+  return Math.max(0, end - start);
+};
+
+export const mergeOverlappingSlots = (slots: TimeSlot[]): TimeSlot[] => {
+  if (slots.length === 0) return [];
+  const intervals = slots
+    .map(s => ({ start: timeToMinutes(s.startTime), end: timeToMinutes(s.endTime), id: s.id }))
+    .filter(i => i.end > i.start)
+    .sort((a, b) => a.start - b.start);
+
+  const merged: { start: number; end: number }[] = [];
+  for (const interval of intervals) {
+    if (merged.length === 0) {
+      merged.push({ start: interval.start, end: interval.end });
+    } else {
+      const last = merged[merged.length - 1];
+      if (interval.start <= last.end) {
+        last.end = Math.max(last.end, interval.end);
+      } else {
+        merged.push({ start: interval.start, end: interval.end });
+      }
+    }
+  }
+
+  return merged.map((m, idx) => ({
+    id: `merged-${idx}`,
+    startTime: `${String(Math.floor(m.start / 60)).padStart(2, '0')}:${String(m.start % 60).padStart(2, '0')}`,
+    endTime: `${String(Math.floor(m.end / 60)).padStart(2, '0')}:${String(m.end % 60).padStart(2, '0')}`,
+  }));
+};
+
+export const calculateTotalDuration = (slots: TimeSlot[]): number => {
+  const merged = mergeOverlappingSlots(slots);
+  return merged.reduce((total, slot) => total + calculateSlotDuration(slot), 0);
+};
+
+export interface PersonWorkHours {
+  personId: string;
+  totalMinutes: number;
+  dailyMinutes: Record<string, number>;
+}
+
+export const calculatePersonWorkHours = (
+  personId: string,
+  logs: ExcavationLog[],
+  startDate?: string,
+  endDate?: string
+): PersonWorkHours => {
+  const result: PersonWorkHours = {
+    personId,
+    totalMinutes: 0,
+    dailyMinutes: {},
+  };
+
+  const relevantLogs = logs.filter(log => {
+    if (!log.participantIds.includes(personId)) return false;
+    if (startDate && log.date < startDate) return false;
+    if (endDate && log.date > endDate) return false;
+    return true;
+  });
+
+  const dailySlots: Record<string, TimeSlot[]> = {};
+  for (const log of relevantLogs) {
+    if (!dailySlots[log.date]) dailySlots[log.date] = [];
+    dailySlots[log.date].push(...log.timeSlots);
+  }
+
+  for (const [date, slots] of Object.entries(dailySlots)) {
+    const mins = calculateTotalDuration(slots);
+    result.dailyMinutes[date] = mins;
+    result.totalMinutes += mins;
+  }
+
+  return result;
+};
+
+export const getDateRange = (startDate: string, endDate: string): string[] => {
+  const dates: string[] = [];
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const current = new Date(start);
+  while (current <= end) {
+    dates.push(formatDate(current));
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
+};
+
+export const WEATHER_ICONS: Record<WeatherType, { emoji: string; label: string }> = {
+  '晴': { emoji: '☀️', label: '晴' },
+  '多云': { emoji: '⛅', label: '多云' },
+  '阴': { emoji: '☁️', label: '阴' },
+  '小雨': { emoji: '🌦️', label: '小雨' },
+  '中雨': { emoji: '🌧️', label: '中雨' },
+  '大雨': { emoji: '⛈️', label: '大雨' },
+  '雪': { emoji: '❄️', label: '雪' },
+  '雾': { emoji: '🌫️', label: '雾' },
+  '大风': { emoji: '💨', label: '大风' },
+};
+
+export const WEATHER_OPTIONS: WeatherType[] = ['晴', '多云', '阴', '小雨', '中雨', '大雨', '雪', '雾', '大风'];
+
+export const isSameDay = (ts1: number, ts2: number): boolean => {
+  const d1 = new Date(ts1);
+  const d2 = new Date(ts2);
+  return d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate();
+};
+
+export const timestampToDateString = (ts: number): string => formatDate(new Date(ts));
+
+export const findLogsByDate = (logs: ExcavationLog[], date: string): ExcavationLog[] => {
+  return logs.filter(l => l.date === date);
 };

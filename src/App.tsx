@@ -9,9 +9,13 @@ import ArtifactsPanel from './components/ArtifactsPanel';
 import ProfileView from './components/ProfileView';
 import WelcomeScreen from './components/WelcomeScreen';
 import SamplesPanel from './components/SamplesPanel';
+import PersonnelPanel from './components/PersonnelPanel';
+import ExcavationLogsPanel from './components/ExcavationLogsPanel';
+import WorkHoursPanel from './components/WorkHoursPanel';
+import TimelinePanel from './components/TimelinePanel';
 import { useAppStore } from './store/useAppStore';
 
-type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile';
+type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'personnel' | 'logs' | 'workhours' | 'timeline';
 
 function App() {
   const [currentView, setCurrentView] = useState<ViewType>('grid');
@@ -41,6 +45,14 @@ function App() {
         return <SamplesPanel />;
       case 'profile':
         return <ProfileView />;
+      case 'personnel':
+        return <PersonnelPanel />;
+      case 'logs':
+        return <ExcavationLogsPanel />;
+      case 'workhours':
+        return <WorkHoursPanel />;
+      case 'timeline':
+        return <TimelinePanel />;
       default:
         return <GridView />;
     }

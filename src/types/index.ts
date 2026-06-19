@@ -170,3 +170,38 @@ export interface ProfileData {
   minElevation: number;
   maxElevation: number;
 }
+
+export type PersonRole = '领队' | '技工' | '学生' | '志愿者';
+
+export type PersonStatus = '在岗' | '离场';
+
+export interface Person {
+  id: string;
+  name: string;
+  role: PersonRole;
+  organization: string;
+  phone: string;
+  status: PersonStatus;
+  createdAt: number;
+}
+
+export type WeatherType = '晴' | '多云' | '阴' | '小雨' | '中雨' | '大雨' | '雪' | '雾' | '大风';
+
+export interface TimeSlot {
+  id: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface ExcavationLog {
+  id: string;
+  date: string;
+  weather: WeatherType;
+  participantIds: string[];
+  timeSlots: TimeSlot[];
+  summary: string;
+  newlyExposedCellIds: string[];
+  newlyArtifactIds: string[];
+  createdAt: number;
+  updatedAt: number;
+}

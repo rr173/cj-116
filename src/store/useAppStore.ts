@@ -8,6 +8,12 @@ import {
   StratigraphicRelation,
   Artifact,
   RelationType,
+  Person,
+  PersonRole,
+  PersonStatus,
+  ExcavationLog,
+  TimeSlot,
+  WeatherType,
 } from '../types';
 import {
   generateId,
@@ -15,6 +21,8 @@ import {
   calculateThickness,
   validateElevationOrder,
   getUnitColor,
+  formatDate,
+  timestampToDateString,
 } from '../utils';
 
 interface AppState {
@@ -24,6 +32,8 @@ interface AppState {
   units: StratigraphicUnit[];
   relations: StratigraphicRelation[];
   artifacts: Artifact[];
+  persons: Person[];
+  excavationLogs: ExcavationLog[];
   selectedTrenchId: string | null;
   selectedCellId: string | null;
   selectedUnitId: string | null;
@@ -60,6 +70,22 @@ interface AppState {
   getArtifactsByCell: (cellId: string) => Artifact[];
   getArtifactsByUnit: (unitId: string) => Artifact[];
   getArtifactsByStratigraphy: (stratigraphyId: string) => Artifact[];
+
+  addPerson: (data: Omit<Person, 'id' | 'createdAt'>) => Person;
+  updatePerson: (id: string, data: Partial<Person>) => void;
+  deletePerson: (id: string) => void;
+  getPersonById: (id: string) => Person | undefined;
+  getPersonsByRole: (role: PersonRole) => Person[];
+  getActivePersons: () => Person[];
+
+  addExcavationLog: (data: Omit<ExcavationLog, 'id' | 'newlyExposedCellIds' | 'newlyArtifactIds' | 'createdAt' | 'updatedAt'>) => ExcavationLog;
+  updateExcavationLog: (id: string, data: Partial<Omit<ExcavationLog, 'id' | 'newlyExposedCellIds' | 'newlyArtifactIds' | 'createdAt'>>) => void;
+  deleteExcavationLog: (id: string) => void;
+  getExcavationLogById: (id: string) => ExcavationLog | undefined;
+  getLogsByDate: (date: string) => ExcavationLog[];
+  getLogsByPerson: (personId: string) => ExcavationLog[];
+  getCellsNewlyExposedOnDate: (date: string) => string[];
+  getArtifactsNewlyCreatedOnDate: (date: string) => string[];
 }
 
 export const useAppStore = create<AppState>()(
@@ -71,6 +97,8 @@ export const useAppStore = create<AppState>()(
       units: [],
       relations: [],
       artifacts: [],
+      persons: [],
+      excavationLogs: [],
       selectedTrenchId: null,
       selectedCellId: null,
       selectedUnitId: null,
@@ -272,6 +300,131 @@ export const useAppStore = create<AppState>()(
 
       getArtifactsByStratigraphy: (stratigraphyId) => {
         return get().artifacts.filter((a) => a.stratigraphyId === stratigraphyId);
+      },
+
+      addPerson: (data) => {
+        const person: Person = {
+          ...data,
+          id: generateId(),
+          createdAt: Date.now(),
+        };
+        set((state) => ({ persons: [...state.persons, person] }));
+        return person;
+      },
+
+      updatePerson: (id, data) => {
+        set((state) => ({
+          persons: state.persons.map((p) =>
+            p.id === id ? { ...p, ...data } : p
+          ),
+        }));
+      },
+
+      deletePerson: (id) => {
+        set((state) => ({
+          persons: state.persons.filter((p) => p.id !== id),
+          excavationLogs: state.excavationLogs.map((log) => ({
+            ...log,
+            participantIds: log.participantIds.filter((pid) => pid !== id),
+          })),
+        }));
+      },
+
+      getPersonById: (id) => {
+        return get().persons.find((p) => p.id === id);
+      },
+
+      getPersonsByRole: (role) => {
+        return get().persons.filter((p) => p.role === role);
+      },
+
+      getActivePersons: () => {
+        return get().persons.filter((p) => p.status === '在岗');
+      },
+
+      addExcavationLog: (data) => {
+        const now = Date.now();
+        const log: ExcavationLog = {
+          ...data,
+          id: generateId(),
+          newlyExposedCellIds: get().getCellsNewlyExposedOnDate(data.date),
+          newlyArtifactIds: get().getArtifactsNewlyCreatedOnDate(data.date),
+          createdAt: now,
+          updatedAt: now,
+        };
+        set((state) => ({ excavationLogs: [...state.excavationLogs, log] }));
+        return log;
+      },
+
+      updateExcavationLog: (id, data) => {
+        set((state) => {
+          const existing = state.excavationLogs.find((l) => l.id === id);
+          if (!existing) return state;
+          const updatedDate = data.date ?? existing.date;
+          return {
+            excavationLogs: state.excavationLogs.map((l) =>
+              l.id === id
+                ? {
+                    ...l,
+                    ...data,
+                    newlyExposedCellIds: get().getCellsNewlyExposedOnDate(updatedDate),
+                    newlyArtifactIds: get().getArtifactsNewlyCreatedOnDate(updatedDate),
+                    updatedAt: Date.now(),
+                  }
+                : l
+            ),
+          };
+        });
+      },
+
+      deleteExcavationLog: (id) => {
+        set((state) => ({
+          excavationLogs: state.excavationLogs.filter((l) => l.id !== id),
+        }));
+      },
+
+      getExcavationLogById: (id) => {
+        return get().excavationLogs.find((l) => l.id === id);
+      },
+
+      getLogsByDate: (date) => {
+        return get().excavationLogs.filter((l) => l.date === date);
+      },
+
+      getLogsByPerson: (personId) => {
+        return get().excavationLogs.filter((l) =>
+          l.participantIds.includes(personId)
+        );
+      },
+
+      getCellsNewlyExposedOnDate: (date) => {
+        const state = get();
+        const stratDate = new Date(date);
+        const year = stratDate.getFullYear();
+        const month = stratDate.getMonth();
+        const day = stratDate.getDate();
+        const cellIdsSet = new Set<string>();
+        for (const s of state.stratigraphies) {
+          const d = new Date(s.createdAt);
+          if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) {
+            cellIdsSet.add(s.cellId);
+          }
+        }
+        return Array.from(cellIdsSet);
+      },
+
+      getArtifactsNewlyCreatedOnDate: (date) => {
+        const state = get();
+        const artifactDate = new Date(date);
+        const year = artifactDate.getFullYear();
+        const month = artifactDate.getMonth();
+        const day = artifactDate.getDate();
+        return state.artifacts
+          .filter((a) => {
+            const d = new Date(a.createdAt);
+            return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day;
+          })
+          .map((a) => a.id);
       },
     }),
     {

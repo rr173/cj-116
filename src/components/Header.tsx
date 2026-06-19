@@ -1,11 +1,11 @@
 import { useAppStore } from '../store/useAppStore';
 import TrenchSelector from './TrenchSelector';
 
-type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile';
+type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'personnel' | 'logs' | 'workhours' | 'timeline';
 
 interface HeaderProps {
   currentView: ViewType;
-  onViewChange: (view: ViewType) => void;
+  onViewChange?: (view: ViewType) => void;
 }
 
 const viewNames: Record<ViewType, string> = {
@@ -16,6 +16,10 @@ const viewNames: Record<ViewType, string> = {
   artifacts: '遗物登记',
   samples: '样品采集与送检',
   profile: '剖面图',
+  personnel: '人员库',
+  logs: '发掘日志',
+  workhours: '工时统计',
+  timeline: '发掘时间线',
 };
 
 export default function Header({ currentView }: HeaderProps) {
