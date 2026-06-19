@@ -9,8 +9,50 @@ import {
   StatusChangeLog,
   SAMPLE_STATUS_ORDER,
   SAMPLE_TYPE_PREFIX,
+  PermissionAction,
+  TargetType,
 } from '../types';
-import { generateId } from '../utils';
+import { generateId, hasPermission } from '../utils';
+
+const getAuthState = () => {
+  const authState = JSON.parse(localStorage.getItem('archaeology-auth-storage') || '{}');
+  return authState.state || { currentUser: null };
+};
+
+const checkPermission = (action: PermissionAction): boolean => {
+  const auth = getAuthState();
+  if (!auth.currentUser) return false;
+  return hasPermission(auth.currentUser.role, action);
+};
+
+const logOperation = (
+  operation: 'create' | 'update' | 'delete',
+  targetType: TargetType,
+  targetId: string,
+  targetName: string | undefined,
+  details: string
+) => {
+  const auth = getAuthState();
+  if (!auth.currentUser) return;
+
+  const log = {
+    id: generateId(),
+    userId: auth.currentUser.id,
+    username: auth.currentUser.username,
+    operation,
+    targetType,
+    targetId,
+    targetName,
+    details,
+    timestamp: Date.now(),
+  };
+
+  const authStorage = JSON.parse(localStorage.getItem('archaeology-auth-storage') || '{}');
+  if (!authStorage.state) authStorage.state = {};
+  if (!authStorage.state.operationLogs) authStorage.state.operationLogs = [];
+  authStorage.state.operationLogs.push(log);
+  localStorage.setItem('archaeology-auth-storage', JSON.stringify(authStorage));
+};
 
 interface SampleState {
   samples: Sample[];
@@ -59,6 +101,9 @@ export const useSampleStore = create<SampleState>()(
       },
 
       addSample: (data) => {
+        if (!checkPermission('sample:create')) {
+          throw new Error('没有权限添加样品');
+        }
         const sampleNumber = get().getNextSampleNumber(data.type);
         const now = Date.now();
         const sample: Sample = {
@@ -77,12 +122,18 @@ export const useSampleStore = create<SampleState>()(
         set((state) => ({
           samples: [...state.samples, sample],
         }));
+        logOperation('create', 'sample', sample.id, sample.sampleNumber, `添加样品: ${sample.sampleNumber} (${sample.type}), 采集人: ${sample.collector}`);
         return sample;
       },
 
       updateSample: (id, data) => {
+        if (!checkPermission('sample:edit')) {
+          throw new Error('没有权限编辑样品');
+        }
         const sample = get().samples.find((s) => s.id === id);
         if (!sample) return;
+        const changes = Object.keys(data).map((k) => `${k}: ${sample[k as keyof typeof sample]} → ${data[k as keyof typeof data]}`).join(', ');
+        logOperation('update', 'sample', id, sample.sampleNumber, `更新样品: ${sample.sampleNumber}, ${changes}`);
         if (sample.status === '检测中') {
           const allowedKeys = ['status', 'statusHistory', 'result', 'laboratory', 'expectedReturnDate', 'batchId'];
           const filtered: Partial<Sample> = {};
@@ -106,6 +157,11 @@ export const useSampleStore = create<SampleState>()(
       },
 
       deleteSample: (id) => {
+        if (!checkPermission('sample:delete')) {
+          throw new Error('没有权限删除样品');
+        }
+        const sample = get().samples.find((s) => s.id === id);
+        logOperation('delete', 'sample', id, sample?.sampleNumber, `删除样品: ${sample?.sampleNumber || id}`);
         set((state) => ({
           samples: state.samples.filter((s) => s.id !== id),
           batches: state.batches.map((b) => ({

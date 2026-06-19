@@ -185,6 +185,48 @@ export interface Person {
   createdAt: number;
 }
 
+export type SystemRole = '管理员' | '领队' | '记录员' | '访客';
+
+export type OperationType = 'create' | 'update' | 'delete';
+
+export type TargetType = 'trench' | 'stratigraphy' | 'unit' | 'artifact' | 'person' | 'excavationLog' | 'relation' | 'sample' | 'user';
+
+export interface User {
+  id: string;
+  username: string;
+  passwordHash: string;
+  role: SystemRole;
+  personId?: string;
+  createdAt: number;
+  lastActiveAt: number;
+}
+
+export interface OperationLog {
+  id: string;
+  userId: string;
+  username: string;
+  operation: OperationType;
+  targetType: TargetType;
+  targetId: string;
+  targetName?: string;
+  details: string;
+  timestamp: number;
+}
+
+export type PermissionAction =
+  | 'trench:create' | 'trench:edit' | 'trench:delete'
+  | 'stratigraphy:create' | 'stratigraphy:edit' | 'stratigraphy:delete'
+  | 'unit:create' | 'unit:edit' | 'unit:delete'
+  | 'artifact:create' | 'artifact:edit' | 'artifact:delete'
+  | 'person:create' | 'person:edit' | 'person:delete'
+  | 'excavationLog:create' | 'excavationLog:edit' | 'excavationLog:delete'
+  | 'relation:create' | 'relation:delete'
+  | 'sample:create' | 'sample:edit' | 'sample:delete'
+  | 'user:create' | 'user:edit' | 'user:delete'
+  | 'logs:view';
+
+export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs';
+
 export type WeatherType = '晴' | '多云' | '阴' | '小雨' | '中雨' | '大雨' | '雪' | '雾' | '大风';
 
 export interface TimeSlot {

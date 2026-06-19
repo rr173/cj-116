@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { usePermission } from '../hooks/usePermission';
 
 export default function WelcomeScreen() {
   const [showForm, setShowForm] = useState(false);
   const createTrench = useAppStore((state) => state.createTrench);
+  const { can } = usePermission();
 
   const [formData, setFormData] = useState({
     name: '第一发掘区',
@@ -43,10 +45,14 @@ export default function WelcomeScreen() {
           <div className="space-y-4">
             <button
               onClick={() => setShowForm(true)}
-              className="px-8 py-4 bg-earth-600 text-white text-lg font-medium rounded-xl hover:bg-earth-700 transition-colors shadow-lg hover:shadow-xl"
+              disabled={!can('trench:create')}
+              className="px-8 py-4 bg-earth-600 text-white text-lg font-medium rounded-xl hover:bg-earth-700 transition-colors shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              创建第一个发掘区
+              {can('trench:create') ? '创建第一个发掘区' : '没有权限创建发掘区'}
             </button>
+            {!can('trench:create') && (
+              <p className="text-sm text-gray-500">请联系管理员创建发掘区</p>
+            )}
             <div className="grid grid-cols-3 gap-4 mt-12">
               <div className="bg-white/60 backdrop-blur rounded-xl p-4">
                 <div className="text-3xl mb-2">📐</div>

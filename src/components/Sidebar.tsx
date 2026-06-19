@@ -1,14 +1,14 @@
 import { useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
-
-type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'personnel' | 'logs' | 'workhours' | 'timeline';
+import { usePermission } from '../hooks/usePermission';
+import { ViewType } from '../types';
 
 interface SidebarProps {
   currentView: ViewType;
   onViewChange: (view: ViewType) => void;
 }
 
-const menuItems: { id: ViewType; label: string; icon: JSX.Element; group?: string }[] = [
+const menuItems: { id: ViewType; label: string; icon: JSX.Element; group?: string; permission?: string }[] = [
   {
     id: 'grid',
     label: '方格网',
@@ -110,16 +110,44 @@ const menuItems: { id: ViewType; label: string; icon: JSX.Element; group?: strin
       </svg>
     ),
   },
+  {
+    id: 'users',
+    label: '用户管理',
+    group: '系统管理',
+    permission: 'user:create',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'operationLogs',
+    label: '操作日志',
+    group: '系统管理',
+    permission: 'logs:view',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    ),
+  },
 ];
 
 export default function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const selectedCellId = useAppStore((state) => state.selectedCellId);
   const selectedCell = useAppStore((state) => state.getCellById(selectedCellId || ''));
+  const { can } = usePermission();
 
   const groupedItems = useMemo(() => {
-    const groups: { name: string | null; items: typeof menuItems }[] = [];
+    const filteredItems = menuItems.filter((item) => {
+      if (!item.permission) return true;
+      return can(item.permission as any);
+    });
+
+    const groups: { name: string | null; items: typeof filteredItems }[] = [];
     let currentGroup: string | null = null;
-    for (const item of menuItems) {
+    for (const item of filteredItems) {
       const groupName = item.group || null;
       if (groupName !== currentGroup) {
         currentGroup = groupName;
@@ -128,7 +156,7 @@ export default function Sidebar({ currentView, onViewChange }: SidebarProps) {
       groups[groups.length - 1].items.push(item);
     }
     return groups;
-  }, []);
+  }, [can]);
 
   return (
     <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import GridView from './components/GridView';
@@ -13,15 +13,73 @@ import PersonnelPanel from './components/PersonnelPanel';
 import ExcavationLogsPanel from './components/ExcavationLogsPanel';
 import WorkHoursPanel from './components/WorkHoursPanel';
 import TimelinePanel from './components/TimelinePanel';
+import LoginPage from './components/LoginPage';
+import UserManagementPanel from './components/UserManagementPanel';
+import OperationLogsPanel from './components/OperationLogsPanel';
 import { useAppStore } from './store/useAppStore';
-
-type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'personnel' | 'logs' | 'workhours' | 'timeline';
+import { useAuthStore } from './store/useAuthStore';
+import { ViewType } from './types';
 
 function App() {
   const [currentView, setCurrentView] = useState<ViewType>('grid');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
   const selectedTrenchId = useAppStore((state) => state.selectedTrenchId);
   const selectedCellId = useAppStore((state) => state.selectedCellId);
   const trenches = useAppStore((state) => state.trenches);
+
+  const checkSession = useAuthStore((state) => state.checkSession);
+  const updateLastActive = useAuthStore((state) => state.updateLastActive);
+  const initDefaultAdmin = useAuthStore((state) => state.initDefaultAdmin);
+
+  useEffect(() => {
+    const init = async () => {
+      await initDefaultAdmin();
+      const valid = checkSession();
+      setIsAuthenticated(valid);
+      setIsLoading(false);
+    };
+    init();
+  }, [checkSession, initDefaultAdmin]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const handleActivity = () => {
+      updateLastActive();
+    };
+
+    const events = ['mousedown', 'keydown', 'scroll', 'click'];
+    events.forEach((event) => {
+      document.addEventListener(event, handleActivity);
+    });
+
+    return () => {
+      events.forEach((event) => {
+        document.removeEventListener(event, handleActivity);
+      });
+    };
+  }, [isAuthenticated, updateLastActive]);
+
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-earth-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">加载中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
 
   const hasTrenches = trenches.length > 0;
 
@@ -53,6 +111,10 @@ function App() {
         return <WorkHoursPanel />;
       case 'timeline':
         return <TimelinePanel />;
+      case 'users':
+        return <UserManagementPanel />;
+      case 'operationLogs':
+        return <OperationLogsPanel />;
       default:
         return <GridView />;
     }

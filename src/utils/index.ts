@@ -1,5 +1,64 @@
 import { v4 as uuidv4 } from 'uuid';
-import { GridCell, Trench, Stratigraphy, StratigraphicUnit, StratigraphicRelation, Artifact, RelationType, TimeSlot, ExcavationLog, WeatherType } from '../types';
+import {
+  GridCell, Trench, Stratigraphy, StratigraphicUnit, StratigraphicRelation, Artifact,
+  RelationType, TimeSlot, ExcavationLog, WeatherType, SystemRole, PermissionAction,
+} from '../types';
+
+export const hashPassword = async (password: string): Promise<string> => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+export const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
+  const computedHash = await hashPassword(password);
+  return computedHash === hash;
+};
+
+const ROLE_PERMISSIONS: Record<SystemRole, PermissionAction[]> = {
+  '管理员': [
+    'trench:create', 'trench:edit', 'trench:delete',
+    'stratigraphy:create', 'stratigraphy:edit', 'stratigraphy:delete',
+    'unit:create', 'unit:edit', 'unit:delete',
+    'artifact:create', 'artifact:edit', 'artifact:delete',
+    'person:create', 'person:edit', 'person:delete',
+    'excavationLog:create', 'excavationLog:edit', 'excavationLog:delete',
+    'relation:create', 'relation:delete',
+    'sample:create', 'sample:edit', 'sample:delete',
+    'user:create', 'user:edit', 'user:delete',
+    'logs:view',
+  ],
+  '领队': [
+    'trench:create', 'trench:edit',
+    'stratigraphy:create', 'stratigraphy:edit', 'stratigraphy:delete',
+    'unit:create', 'unit:edit', 'unit:delete',
+    'artifact:create', 'artifact:edit', 'artifact:delete',
+    'person:create', 'person:edit',
+    'excavationLog:create', 'excavationLog:edit', 'excavationLog:delete',
+    'relation:create', 'relation:delete',
+    'sample:create', 'sample:edit', 'sample:delete',
+    'logs:view',
+  ],
+  '记录员': [
+    'stratigraphy:create', 'stratigraphy:edit',
+    'artifact:create', 'artifact:edit',
+    'sample:create', 'sample:edit',
+    'excavationLog:create', 'excavationLog:edit',
+  ],
+  '访客': [],
+};
+
+export const hasPermission = (role: SystemRole, action: PermissionAction): boolean => {
+  return ROLE_PERMISSIONS[role]?.includes(action) ?? false;
+};
+
+export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+export const isSessionExpired = (lastActiveAt: number): boolean => {
+  return Date.now() - lastActiveAt > SEVEN_DAYS_MS;
+};
 
 export const generateId = (): string => uuidv4();
 
