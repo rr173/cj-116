@@ -7,6 +7,9 @@ import {
   StratigraphicUnit,
   StratigraphicRelation,
   Artifact,
+  ArtifactSubtype,
+  ArtifactCategory,
+  ARTIFACT_CATEGORIES,
   RelationType,
   Person,
   PersonRole,
@@ -191,6 +194,15 @@ interface AppState {
 
   getProfileIntersections: (trenchId: string) => ProfileIntersection[];
   alignBoundaryAtIntersection: (intersectionId: string, sourceProfileId: string, unitId: string) => void;
+
+  artifactSubtypes: ArtifactSubtype[];
+  addArtifactSubtype: (data: Omit<ArtifactSubtype, 'id' | 'createdAt'>) => ArtifactSubtype;
+  updateArtifactSubtype: (id: string, data: Partial<Omit<ArtifactSubtype, 'id' | 'createdAt' | 'category'>>) => void;
+  deleteArtifactSubtype: (id: string) => void;
+  getSubtypesByCategory: (category: ArtifactCategory) => ArtifactSubtype[];
+  matchArtifactSubtype: (typeText: string) => ArtifactSubtype | null;
+  autoAssignSubtypes: () => { matched: number; unmatched: number };
+  assignArtifactToSubtype: (artifactId: string, subtypeId: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -221,6 +233,7 @@ export const useAppStore = create<AppState>()(
       showControlPointsOnMap: true,
       profiles: [],
       selectedProfileId: null,
+      artifactSubtypes: [],
 
       createTrench: (data) => {
         if (!checkActionPermission('trench:create')) {
@@ -1722,6 +1735,129 @@ export const useAppStore = create<AppState>()(
           targetId: targetProfileId,
           details: `对齐剖面标高，单位ID: ${unitId}, 标高: ${sourceElevation.toFixed(3)}m`,
         });
+      },
+
+      addArtifactSubtype: (data) => {
+        if (!checkActionPermission('artifactSubtype:create')) {
+          throw new Error('没有权限添加器型');
+        }
+        const subtype: ArtifactSubtype = {
+          ...data,
+          id: generateId(),
+          createdAt: Date.now(),
+        };
+        set((state) => ({
+          artifactSubtypes: [...state.artifactSubtypes, subtype],
+        }));
+        logOperationToStorage({
+          operation: 'create',
+          targetType: 'artifact',
+          targetId: subtype.id,
+          targetName: subtype.name,
+          details: `添加器型: ${subtype.category} - ${subtype.name}`,
+        });
+        return subtype;
+      },
+
+      updateArtifactSubtype: (id, data) => {
+        if (!checkActionPermission('artifactSubtype:edit')) {
+          throw new Error('没有权限编辑器型');
+        }
+        const existing = get().artifactSubtypes.find((s) => s.id === id);
+        if (!existing) return;
+        const changes = Object.keys(data)
+          .map((k) => `${k}: ${existing[k as keyof typeof existing]} → ${data[k as keyof typeof data]}`)
+          .join(', ');
+        logOperationToStorage({
+          operation: 'update',
+          targetType: 'artifact',
+          targetId: id,
+          targetName: existing.name,
+          details: `更新器型: ${existing.category} - ${existing.name}, ${changes}`,
+        });
+        set((state) => ({
+          artifactSubtypes: state.artifactSubtypes.map((s) =>
+            s.id === id ? { ...s, ...data } : s
+          ),
+        }));
+      },
+
+      deleteArtifactSubtype: (id) => {
+        if (!checkActionPermission('artifactSubtype:delete')) {
+          throw new Error('没有权限删除器型');
+        }
+        const existing = get().artifactSubtypes.find((s) => s.id === id);
+        logOperationToStorage({
+          operation: 'delete',
+          targetType: 'artifact',
+          targetId: id,
+          targetName: existing?.name,
+          details: `删除器型: ${existing?.category || ''} - ${existing?.name || id}`,
+        });
+        set((state) => ({
+          artifactSubtypes: state.artifactSubtypes.filter((s) => s.id !== id),
+          artifacts: state.artifacts.map((a) =>
+            a.subtypeId === id ? { ...a, subtypeId: undefined } : a
+          ),
+        }));
+      },
+
+      getSubtypesByCategory: (category) => {
+        return get()
+          .artifactSubtypes.filter((s) => s.category === category)
+          .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+      },
+
+      matchArtifactSubtype: (typeText) => {
+        if (!typeText || !typeText.trim()) return null;
+        const text = typeText.trim();
+        const subtypes = get().artifactSubtypes;
+
+        for (const subtype of subtypes) {
+          if (subtype.name === text) return subtype;
+          if (text.includes(subtype.name)) return subtype;
+          if (subtype.name.includes(text)) return subtype;
+          if (subtype.aliases) {
+            for (const alias of subtype.aliases) {
+              if (alias === text || text.includes(alias) || alias.includes(text)) {
+                return subtype;
+              }
+            }
+          }
+        }
+        return null;
+      },
+
+      autoAssignSubtypes: () => {
+        const state = get();
+        let matched = 0;
+        let unmatched = 0;
+        const updatedArtifacts = state.artifacts.map((a) => {
+          if (a.subtypeId) {
+            matched++;
+            return a;
+          }
+          const matchedSubtype = state.matchArtifactSubtype(a.type);
+          if (matchedSubtype) {
+            matched++;
+            return { ...a, subtypeId: matchedSubtype.id };
+          }
+          unmatched++;
+          return a;
+        });
+        set({ artifacts: updatedArtifacts });
+        return { matched, unmatched };
+      },
+
+      assignArtifactToSubtype: (artifactId, subtypeId) => {
+        if (!checkActionPermission('artifact:edit')) {
+          throw new Error('没有权限编辑遗物');
+        }
+        set((state) => ({
+          artifacts: state.artifacts.map((a) =>
+            a.id === artifactId ? { ...a, subtypeId } : a
+          ),
+        }));
       },
     }),
     {

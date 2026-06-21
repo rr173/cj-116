@@ -1,7 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import {
   GridCell, Trench, Stratigraphy, StratigraphicUnit, StratigraphicRelation, Artifact,
+  ArtifactSubtype, ArtifactCategory, ARTIFACT_CATEGORIES, StratigraphicRelation as _unused,
   RelationType, TimeSlot, ExcavationLog, WeatherType, SystemRole, PermissionAction,
+  Period,
 } from '../types';
 
 export const hashPassword = async (password: string): Promise<string> => {
@@ -23,6 +25,7 @@ const ROLE_PERMISSIONS: Record<SystemRole, PermissionAction[]> = {
     'stratigraphy:create', 'stratigraphy:edit', 'stratigraphy:delete',
     'unit:create', 'unit:edit', 'unit:delete',
     'artifact:create', 'artifact:edit', 'artifact:delete',
+    'artifactSubtype:create', 'artifactSubtype:edit', 'artifactSubtype:delete',
     'person:create', 'person:edit', 'person:delete',
     'excavationLog:create', 'excavationLog:edit', 'excavationLog:delete',
     'relation:create', 'relation:delete',
@@ -38,6 +41,7 @@ const ROLE_PERMISSIONS: Record<SystemRole, PermissionAction[]> = {
     'stratigraphy:create', 'stratigraphy:edit', 'stratigraphy:delete',
     'unit:create', 'unit:edit', 'unit:delete',
     'artifact:create', 'artifact:edit', 'artifact:delete',
+    'artifactSubtype:create', 'artifactSubtype:edit', 'artifactSubtype:delete',
     'person:create', 'person:edit',
     'excavationLog:create', 'excavationLog:edit', 'excavationLog:delete',
     'relation:create', 'relation:delete',
@@ -419,10 +423,11 @@ export const exportArtifactsToCSV = (
   artifacts: Artifact[],
   cells: GridCell[],
   units: StratigraphicUnit[],
-  stratigraphies: Stratigraphy[]
+  stratigraphies: Stratigraphy[],
+  subtypes: ArtifactSubtype[] = []
 ): string => {
   const headers = [
-    '标本编号', '类型', '材质', '尺寸描述', '照片编号',
+    '标本编号', '大类', '器型', '原类型文字', '材质', '尺寸描述', '照片编号',
     '出土方格编号', '出土地层单位', '出土层号',
     '平面X', '平面Y', '标高Z', '描述', '登记时间'
   ];
@@ -437,6 +442,7 @@ export const exportArtifactsToCSV = (
     const strat = stratigraphies.find(s => s.id === stratId && s.cellId === cellId);
     return strat ? strat.layerNumber.toString() : '-';
   };
+  const getSubtypeById = (id?: string) => subtypes.find(s => s.id === id);
 
   const escapeCSV = (val: string) => {
     if (val.includes(',') || val.includes('"') || val.includes('\n')) {
@@ -445,23 +451,248 @@ export const exportArtifactsToCSV = (
     return val;
   };
 
-  const rows = artifacts.map(a => [
-    a.catalogNumber,
-    a.type,
-    a.material,
-    a.dimensions,
-    a.photoNumber,
-    getCellCode(a.cellId),
-    getUnitCode(a.unitId),
-    getLayerNumber(a.stratigraphyId, a.cellId),
-    a.x.toFixed(2),
-    a.y.toFixed(2),
-    a.z.toFixed(2),
-    a.description,
-    new Date(a.createdAt).toLocaleString('zh-CN'),
-  ]);
+  const rows = artifacts.map(a => {
+    const subtype = getSubtypeById(a.subtypeId);
+    return [
+      a.catalogNumber,
+      subtype?.category || '',
+      subtype?.name || '',
+      a.type,
+      a.material,
+      a.dimensions,
+      a.photoNumber,
+      getCellCode(a.cellId),
+      getUnitCode(a.unitId),
+      getLayerNumber(a.stratigraphyId, a.cellId),
+      a.x.toFixed(2),
+      a.y.toFixed(2),
+      a.z.toFixed(2),
+      a.description,
+      new Date(a.createdAt).toLocaleString('zh-CN'),
+    ];
+  });
 
   return [headers.join(','), ...rows.map(r => r.map(escapeCSV).join(','))].join('\n');
+};
+
+export const topologicalSortUnits = (
+  units: StratigraphicUnit[],
+  relations: StratigraphicRelation[]
+): string[] => {
+  const nodeIds = units.map(u => u.id);
+  const edges = relations
+    .filter(r => r.type === '叠压' || r.type === '打破')
+    .map(r => ({ from: r.fromUnitId, to: r.toUnitId }));
+
+  const inDegree = new Map<string, number>();
+  nodeIds.forEach(n => inDegree.set(n, 0));
+
+  const adjList = new Map<string, string[]>();
+  nodeIds.forEach(n => adjList.set(n, []));
+
+  edges.forEach(e => {
+    if (nodeIds.includes(e.from) && nodeIds.includes(e.to)) {
+      inDegree.set(e.to, (inDegree.get(e.to) || 0) + 1);
+      adjList.get(e.from)?.push(e.to);
+    }
+  });
+
+  const queue: { id: string; level: number }[] = [];
+  const levels = new Map<string, number>();
+
+  nodeIds.forEach(id => {
+    if (inDegree.get(id) === 0) queue.push({ id, level: 0 });
+  });
+
+  while (queue.length > 0) {
+    const { id, level } = queue.shift()!;
+    levels.set(id, level);
+
+    const neighbors = adjList.get(id) || [];
+    for (const neighbor of neighbors) {
+      const newDegree = (inDegree.get(neighbor) || 0) - 1;
+      inDegree.set(neighbor, newDegree);
+      if (newDegree === 0) {
+        queue.push({ id: neighbor, level: level + 1 });
+      }
+    }
+  }
+
+  return [...nodeIds].sort((a, b) => {
+    const la = levels.get(a) ?? Infinity;
+    const lb = levels.get(b) ?? Infinity;
+    if (la !== lb) return lb - la;
+    const ua = units.find(u => u.id === a);
+    const ub = units.find(u => u.id === b);
+    return (ua?.code || '').localeCompare(ub?.code || '', 'zh-CN');
+  });
+};
+
+export interface UnitArtifactStats {
+  unitId: string;
+  unitCode: string;
+  unitName: string;
+  artifacts: Artifact[];
+  categoryCounts: Record<ArtifactCategory, number>;
+  subtypeCounts: Map<string, number>;
+  total: number;
+}
+
+export const computeUnitStats = (
+  units: StratigraphicUnit[],
+  artifacts: Artifact[],
+  subtypes: ArtifactSubtype[]
+): Map<string, UnitArtifactStats> => {
+  const result = new Map<string, UnitArtifactStats>();
+
+  const initCategoryCounts = (): Record<ArtifactCategory, number> => {
+    const obj = {} as Record<ArtifactCategory, number>;
+    ARTIFACT_CATEGORIES.forEach(c => obj[c] = 0);
+    return obj;
+  };
+
+  units.forEach(u => {
+    result.set(u.id, {
+      unitId: u.id,
+      unitCode: u.code,
+      unitName: u.name,
+      artifacts: [],
+      categoryCounts: initCategoryCounts(),
+      subtypeCounts: new Map(),
+      total: 0,
+    });
+  });
+
+  const getSubtypeById = (id?: string) => subtypes.find(s => s.id === id);
+
+  artifacts.forEach(a => {
+    if (!a.unitId) return;
+    let stats = result.get(a.unitId);
+    if (!stats) {
+      const u = units.find(u => u.id === a.unitId);
+      if (!u) return;
+      stats = {
+        unitId: u.id,
+        unitCode: u.code,
+        unitName: u.name,
+        artifacts: [],
+        categoryCounts: initCategoryCounts(),
+        subtypeCounts: new Map(),
+        total: 0,
+      };
+      result.set(u.id, stats);
+    }
+    stats.artifacts.push(a);
+    stats.total++;
+    const subtype = getSubtypeById(a.subtypeId);
+    if (subtype) {
+      stats.categoryCounts[subtype.category]++;
+      const cur = stats.subtypeCounts.get(subtype.id) || 0;
+      stats.subtypeCounts.set(subtype.id, cur + 1);
+    }
+  });
+
+  return result;
+};
+
+export const computePeriodStats = (
+  periods: Period[],
+  units: StratigraphicUnit[],
+  artifacts: Artifact[],
+  subtypes: ArtifactSubtype[],
+  unitToPeriod: Map<string, string>
+): Map<string, {
+  periodId: string;
+  periodName: string;
+  categoryCounts: Record<ArtifactCategory, number>;
+  subtypeCounts: Map<string, number>;
+  total: number;
+}> => {
+  const result = new Map();
+
+  const initCategoryCounts = (): Record<ArtifactCategory, number> => {
+    const obj = {} as Record<ArtifactCategory, number>;
+    ARTIFACT_CATEGORIES.forEach(c => obj[c] = 0);
+    return obj;
+  };
+
+  periods.forEach(p => {
+    result.set(p.id, {
+      periodId: p.id,
+      periodName: p.name,
+      categoryCounts: initCategoryCounts(),
+      subtypeCounts: new Map(),
+      total: 0,
+    });
+  });
+
+  const getSubtypeById = (id?: string) => subtypes.find(s => s.id === id);
+
+  artifacts.forEach(a => {
+    const periodId = a.periodId || (a.unitId ? unitToPeriod.get(a.unitId) : undefined);
+    if (!periodId) return;
+    let stats = result.get(periodId);
+    if (!stats) {
+      const p = periods.find(pp => pp.id === periodId);
+      if (!p) return;
+      stats = {
+        periodId: p.id,
+        periodName: p.name,
+        categoryCounts: initCategoryCounts(),
+        subtypeCounts: new Map(),
+        total: 0,
+      };
+      result.set(p.id, stats);
+    }
+    stats.total++;
+    const subtype = getSubtypeById(a.subtypeId);
+    if (subtype) {
+      stats.categoryCounts[subtype.category]++;
+      const cur = stats.subtypeCounts.get(subtype.id) || 0;
+      stats.subtypeCounts.set(subtype.id, cur + 1);
+    }
+  });
+
+  return result;
+};
+
+export const exportStatsToCSV = (
+  unitIdsInOrder: string[],
+  units: StratigraphicUnit[],
+  allSubtypes: ArtifactSubtype[],
+  unitStatsMap: Map<string, UnitArtifactStats>
+): string => {
+  const escapeCSV = (val: string | number) => {
+    const s = String(val);
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+
+  const sortedSubtypes = [...allSubtypes].sort((a, b) => {
+    const catCmp = ARTIFACT_CATEGORIES.indexOf(a.category) - ARTIFACT_CATEGORIES.indexOf(b.category);
+    if (catCmp !== 0) return catCmp;
+    return a.name.localeCompare(b.name, 'zh-CN');
+  });
+
+  const headers = ['地层单位', '单位名称', '合计', ...sortedSubtypes.map(s => `${s.category}-${s.name}`)];
+
+  const rows = unitIdsInOrder.map(unitId => {
+    const unit = units.find(u => u.id === unitId);
+    const stats = unitStatsMap.get(unitId);
+    const row: (string | number)[] = [
+      unit?.code || '-',
+      unit?.name || '-',
+      stats?.total || 0,
+    ];
+    sortedSubtypes.forEach(s => {
+      row.push(stats?.subtypeCounts.get(s.id) || 0);
+    });
+    return row;
+  });
+
+  return [headers.map(escapeCSV).join(','), ...rows.map(r => r.map(escapeCSV).join(','))].join('\n');
 };
 
 export const downloadCSV = (content: string, filename: string) => {

@@ -68,14 +68,53 @@ export interface StratigraphicRelation {
   description: string;
 }
 
+export type ArtifactCategory =
+  | '陶器'
+  | '石器'
+  | '骨器'
+  | '铜器'
+  | '铁器'
+  | '玉器'
+  | '其他';
+
+export const ARTIFACT_CATEGORIES: ArtifactCategory[] = [
+  '陶器',
+  '石器',
+  '骨器',
+  '铜器',
+  '铁器',
+  '玉器',
+  '其他',
+];
+
+export const CATEGORY_COLORS: Record<ArtifactCategory, string> = {
+  '陶器': '#D97706',
+  '石器': '#6B7280',
+  '骨器': '#F5DEB3',
+  '铜器': '#B8860B',
+  '铁器': '#4B5563',
+  '玉器': '#10B981',
+  '其他': '#9CA3AF',
+};
+
+export interface ArtifactSubtype {
+  id: string;
+  category: ArtifactCategory;
+  name: string;
+  aliases?: string[];
+  createdAt: number;
+}
+
 export interface Artifact {
   id: string;
   trenchId: string;
   cellId: string;
   stratigraphyId?: string;
   unitId?: string;
+  periodId?: string;
   catalogNumber: string;
   type: string;
+  subtypeId?: string;
   material: string;
   description: string;
   dimensions: string;
@@ -221,6 +260,7 @@ export type PermissionAction =
   | 'stratigraphy:create' | 'stratigraphy:edit' | 'stratigraphy:delete'
   | 'unit:create' | 'unit:edit' | 'unit:delete'
   | 'artifact:create' | 'artifact:edit' | 'artifact:delete'
+  | 'artifactSubtype:create' | 'artifactSubtype:edit' | 'artifactSubtype:delete'
   | 'person:create' | 'person:edit' | 'person:delete'
   | 'excavationLog:create' | 'excavationLog:edit' | 'excavationLog:delete'
   | 'relation:create' | 'relation:delete'
