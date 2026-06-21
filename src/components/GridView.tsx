@@ -8,6 +8,7 @@ export default function GridView() {
   const setSelectedCell = useAppStore((state) => state.setSelectedCell);
   const getCellsByTrench = useAppStore((state) => state.getCellsByTrench);
   const getStratigraphiesByCell = useAppStore((state) => state.getStratigraphiesByCell);
+  const getFeaturesByCell = useAppStore((state) => state.getFeaturesByCell);
   const selectedTrench = useAppStore((state) =>
     state.trenches.find((t) => t.id === selectedTrenchId)
   );
@@ -82,6 +83,8 @@ export default function GridView() {
                   const isSelected = cell.id === selectedCellId;
                   const stratCount = getCellStratCount(cell.id);
                   const strats = getStratigraphiesByCell(cell.id);
+                  const cellFeatures = getFeaturesByCell(cell.id);
+                  const featureCount = cellFeatures.length;
 
                   return (
                     <button
@@ -105,11 +108,16 @@ export default function GridView() {
                           {cell.code.replace(selectedTrench?.code || '', '')}
                         </span>
                         {stratCount > 0 && (
-                          <span className="text-xs text-gray-500 mt-1">
+                          <span className="text-xs text-gray-500 mt-0.5">
                             {stratCount}层
                           </span>
                         )}
                       </div>
+                      {featureCount > 0 && (
+                        <div className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-earth-600 text-white text-[10px] font-bold flex items-center justify-center">
+                          {featureCount}
+                        </div>
+                      )}
                       {strats.length > 1 && (
                         <div className="absolute bottom-0 left-0 right-0 flex">
                           {strats.slice(0, 5).map((strat, idx) => (
@@ -157,13 +165,32 @@ export default function GridView() {
           </ul>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">坐标信息</h3>
+          <h3 className="text-sm font-medium text-gray-700 mb-2">方格详情</h3>
           {selectedCellId ? (
             <div className="text-xs text-gray-600 space-y-1">
               <p>方格编号: {cells.find(c => c.id === selectedCellId)?.code}</p>
               <p>X范围: {cells.find(c => c.id === selectedCellId)?.xMin.toFixed(2)} - {cells.find(c => c.id === selectedCellId)?.xMax.toFixed(2)}m</p>
               <p>Y范围: {cells.find(c => c.id === selectedCellId)?.yMin.toFixed(2)} - {cells.find(c => c.id === selectedCellId)?.yMax.toFixed(2)}m</p>
               <p>中心: ({cells.find(c => c.id === selectedCellId)?.centerX.toFixed(2)}, {cells.find(c => c.id === selectedCellId)?.centerY.toFixed(2)})</p>
+              <div className="mt-2 pt-2 border-t border-gray-100">
+                <p className="font-medium text-gray-700 mb-1">
+                  穿过该格的遗迹要素 ({getFeaturesByCell(selectedCellId).length}个)
+                </p>
+                {getFeaturesByCell(selectedCellId).length === 0 ? (
+                  <p className="text-gray-400">暂无</p>
+                ) : (
+                  <div className="space-y-1">
+                    {getFeaturesByCell(selectedCellId).map((f) => (
+                      <div key={f.id} className="flex items-center gap-2 py-0.5">
+                        <span className="inline-block w-2 h-2 rounded-full bg-earth-500" />
+                        <span className="font-medium text-gray-800">{f.featureNumber}</span>
+                        <span className="text-gray-500">({f.featureType})</span>
+                        <span className="text-gray-400">开口 {f.topElevation}m · 底 {f.bottomElevation}m</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <p className="text-xs text-gray-400">请选择一个方格查看详情</p>

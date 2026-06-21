@@ -825,18 +825,18 @@ export const useAppStore = create<AppState>()(
         if (!featureUnit) return { valid: true, warnings };
 
         const earlierUnits = new Set<string>();
-        const queue = [featureUnit.id];
-        const visited = new Set<string>();
-        while (queue.length > 0) {
-          const current = queue.shift()!;
-          if (visited.has(current)) continue;
-          visited.add(current);
+        const queueDown = [featureUnit.id];
+        const visitedDown = new Set<string>();
+        while (queueDown.length > 0) {
+          const current = queueDown.shift()!;
+          if (visitedDown.has(current)) continue;
+          visitedDown.add(current);
           const belowRelations = state.relations.filter(
             (r) => r.fromUnitId === current && (r.type === '叠压' || r.type === '打破')
           );
           for (const rel of belowRelations) {
             earlierUnits.add(rel.toUnitId);
-            queue.push(rel.toUnitId);
+            queueDown.push(rel.toUnitId);
           }
         }
 
@@ -848,7 +848,36 @@ export const useAppStore = create<AppState>()(
           const earlierPeriod = state.periods.find((p) => p.id === earlierFeature.periodId);
           if (earlierPeriod && earlierPeriod.order > period.order) {
             warnings.push(
-              `要素所属地层单位"${featureUnit.code}"在Harris矩阵中位于"${earlierFeature.featureNumber}"所属地层单位之下（更早），但"${earlierFeature.featureNumber}"已分配至更晚时期"${earlierPeriod.name}"，当前分配的"${period.name}"时期序号更早，违反时序约束`
+              `「${earlierFeature.featureNumber}」所属地层单位在"${featureUnit.code}"之下（更早），却分配了更晚时期"${earlierPeriod.name}"，而当前要分配的"${period.name}"更早，违反时序约束`
+            );
+          }
+        }
+
+        const laterUnits = new Set<string>();
+        const queueUp = [featureUnit.id];
+        const visitedUp = new Set<string>();
+        while (queueUp.length > 0) {
+          const current = queueUp.shift()!;
+          if (visitedUp.has(current)) continue;
+          visitedUp.add(current);
+          const aboveRelations = state.relations.filter(
+            (r) => r.toUnitId === current && (r.type === '叠压' || r.type === '打破')
+          );
+          for (const rel of aboveRelations) {
+            laterUnits.add(rel.fromUnitId);
+            queueUp.push(rel.fromUnitId);
+          }
+        }
+
+        const featuresInLaterUnits = state.features.filter(
+          (f) => f.id !== featureId && laterUnits.has(f.unitId) && f.periodId
+        );
+
+        for (const laterFeature of featuresInLaterUnits) {
+          const laterPeriod = state.periods.find((p) => p.id === laterFeature.periodId);
+          if (laterPeriod && laterPeriod.order < period.order) {
+            warnings.push(
+              `「${laterFeature.featureNumber}」所属地层单位在"${featureUnit.code}"之上（更晚），却分配了更早时期"${laterPeriod.name}"，而当前要分配的"${period.name}"更晚，违反时序约束`
             );
           }
         }
