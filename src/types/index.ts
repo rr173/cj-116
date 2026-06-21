@@ -192,7 +192,7 @@ export type SystemRole = '管理员' | '领队' | '记录员' | '访客';
 
 export type OperationType = 'create' | 'update' | 'delete';
 
-export type TargetType = 'trench' | 'stratigraphy' | 'unit' | 'artifact' | 'person' | 'excavationLog' | 'relation' | 'sample' | 'user';
+export type TargetType = 'trench' | 'stratigraphy' | 'unit' | 'artifact' | 'person' | 'excavationLog' | 'relation' | 'sample' | 'user' | 'feature' | 'period';
 
 export interface User {
   id: string;
@@ -225,10 +225,53 @@ export type PermissionAction =
   | 'excavationLog:create' | 'excavationLog:edit' | 'excavationLog:delete'
   | 'relation:create' | 'relation:delete'
   | 'sample:create' | 'sample:edit' | 'sample:delete'
+  | 'feature:create' | 'feature:edit' | 'feature:delete'
+  | 'period:create' | 'period:edit' | 'period:delete'
   | 'user:create' | 'user:edit' | 'user:delete'
   | 'logs:view';
 
-export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs';
+export type FeatureType = '灰坑' | '房址' | '墓葬' | '灶' | '柱洞' | '沟' | '其他';
+
+export type FeatureRelationType = '叠压' | '打破' | '共存';
+
+export interface RelicFeature {
+  id: string;
+  trenchId: string;
+  featureNumber: string;
+  featureType: FeatureType;
+  unitId: string;
+  topElevation: number;
+  bottomElevation: number;
+  vertices: Coordinate[];
+  coveredCellIds: string[];
+  description: string;
+  photoNumbers: string;
+  periodId?: string;
+  createdBy?: string;
+  createdAt: number;
+}
+
+export interface FeatureSpatialRelation {
+  id: string;
+  trenchId: string;
+  featureIdA: string;
+  featureIdB: string;
+  type: FeatureRelationType;
+  confirmed: boolean;
+  createdAt: number;
+}
+
+export interface Period {
+  id: string;
+  trenchId: string;
+  name: string;
+  dateRange: string;
+  color: string;
+  order: number;
+  createdAt: number;
+}
+
+export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs' | 'features';
 
 export type WeatherType = '晴' | '多云' | '阴' | '小雨' | '中雨' | '大雨' | '雪' | '雾' | '大风';
 

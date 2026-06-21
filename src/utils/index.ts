@@ -27,6 +27,8 @@ const ROLE_PERMISSIONS: Record<SystemRole, PermissionAction[]> = {
     'excavationLog:create', 'excavationLog:edit', 'excavationLog:delete',
     'relation:create', 'relation:delete',
     'sample:create', 'sample:edit', 'sample:delete',
+    'feature:create', 'feature:edit', 'feature:delete',
+    'period:create', 'period:edit', 'period:delete',
     'user:create', 'user:edit', 'user:delete',
     'logs:view',
   ],
@@ -39,6 +41,8 @@ const ROLE_PERMISSIONS: Record<SystemRole, PermissionAction[]> = {
     'excavationLog:create', 'excavationLog:edit', 'excavationLog:delete',
     'relation:create', 'relation:delete',
     'sample:create', 'sample:edit', 'sample:delete',
+    'feature:create', 'feature:edit', 'feature:delete',
+    'period:create', 'period:edit', 'period:delete',
     'logs:view',
   ],
   '记录员': [
@@ -46,6 +50,8 @@ const ROLE_PERMISSIONS: Record<SystemRole, PermissionAction[]> = {
     'artifact:create', 'artifact:edit',
     'sample:create', 'sample:edit',
     'excavationLog:create', 'excavationLog:edit',
+    'feature:create', 'feature:edit',
+    'period:create', 'period:edit',
   ],
   '访客': [],
 };
@@ -610,4 +616,171 @@ export const timestampToDateString = (ts: number): string => formatDate(new Date
 
 export const findLogsByDate = (logs: ExcavationLog[], date: string): ExcavationLog[] => {
   return logs.filter(l => l.date === date);
+};
+
+export const PERIOD_COLORS = [
+  '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
+  '#EC4899', '#14B8A6', '#F97316', '#6366F1', '#84CC16',
+];
+
+const pointInPolygon = (px: number, py: number, polygon: { x: number; y: number }[]): boolean => {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+    const intersect = ((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
+const pointInRect = (px: number, py: number, xMin: number, yMin: number, xMax: number, yMax: number): boolean => {
+  return px >= xMin && px <= xMax && py >= yMin && py <= yMax;
+};
+
+const lineIntersectsRect = (
+  x1: number, y1: number, x2: number, y2: number,
+  xMin: number, yMin: number, xMax: number, yMax: number
+): boolean => {
+  if (x1 >= xMin && x1 <= xMax && y1 >= yMin && y1 <= yMax) return true;
+  if (x2 >= xMin && x2 <= xMax && y2 >= yMin && y2 <= yMax) return true;
+
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  const edges: [number, number, number, number][] = [
+    [xMin, yMin, xMax, yMin],
+    [xMax, yMin, xMax, yMax],
+    [xMax, yMax, xMin, yMax],
+    [xMin, yMax, xMin, yMin],
+  ];
+
+  for (const [ex1, ey1, ex2, ey2] of edges) {
+    const denom = dx * (ey2 - ey1) - dy * (ex2 - ex1);
+    if (Math.abs(denom) < 1e-10) continue;
+    const t = ((ex1 - x1) * (ey2 - ey1) - (ey1 - y1) * (ex2 - ex1)) / denom;
+    const u = ((ex1 - x1) * dy - (ey1 - y1) * dx) / denom;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return true;
+  }
+
+  return false;
+};
+
+export const polygonIntersectsRect = (
+  polygon: { x: number; y: number }[],
+  xMin: number, yMin: number, xMax: number, yMax: number
+): boolean => {
+  for (const v of polygon) {
+    if (pointInRect(v.x, v.y, xMin, yMin, xMax, yMax)) return true;
+  }
+
+  if (pointInPolygon(xMin, yMin, polygon)) return true;
+  if (pointInPolygon(xMax, yMin, polygon)) return true;
+  if (pointInPolygon(xMax, yMax, polygon)) return true;
+  if (pointInPolygon(xMin, yMax, polygon)) return true;
+
+  for (let i = 0; i < polygon.length; i++) {
+    const j = (i + 1) % polygon.length;
+    if (lineIntersectsRect(polygon[i].x, polygon[i].y, polygon[j].x, polygon[j].y, xMin, yMin, xMax, yMax)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+export const computeCoveredCells = (
+  polygon: { x: number; y: number }[],
+  cells: { id: string; xMin: number; yMin: number; xMax: number; yMax: number }[]
+): string[] => {
+  return cells
+    .filter((cell) => polygonIntersectsRect(polygon, cell.xMin, cell.yMin, cell.xMax, cell.yMax))
+    .map((cell) => cell.id);
+};
+
+export const polygonsIntersect = (
+  polyA: { x: number; y: number }[],
+  polyB: { x: number; y: number }[]
+): boolean => {
+  for (const v of polyA) {
+    if (pointInPolygon(v.x, v.y, polyB)) return true;
+  }
+  for (const v of polyB) {
+    if (pointInPolygon(v.x, v.y, polyA)) return true;
+  }
+
+  for (let i = 0; i < polyA.length; i++) {
+    const a1 = polyA[i];
+    const a2 = polyA[(i + 1) % polyA.length];
+    for (let j = 0; j < polyB.length; j++) {
+      const b1 = polyB[j];
+      const b2 = polyB[(j + 1) % polyB.length];
+      if (segmentsIntersect(a1.x, a1.y, a2.x, a2.y, b1.x, b1.y, b2.x, b2.y)) return true;
+    }
+  }
+
+  return false;
+};
+
+const segmentsIntersect = (
+  x1: number, y1: number, x2: number, y2: number,
+  x3: number, y3: number, x4: number, y4: number
+): boolean => {
+  const d1 = direction(x3, y3, x4, y4, x1, y1);
+  const d2 = direction(x3, y3, x4, y4, x2, y2);
+  const d3 = direction(x1, y1, x2, y2, x3, y3);
+  const d4 = direction(x1, y1, x2, y2, x4, y4);
+
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+    return true;
+  }
+
+  if (Math.abs(d1) < 1e-10 && onSegment(x3, y3, x4, y4, x1, y1)) return true;
+  if (Math.abs(d2) < 1e-10 && onSegment(x3, y3, x4, y4, x2, y2)) return true;
+  if (Math.abs(d3) < 1e-10 && onSegment(x1, y1, x2, y2, x3, y3)) return true;
+  if (Math.abs(d4) < 1e-10 && onSegment(x1, y1, x2, y2, x4, y4)) return true;
+
+  return false;
+};
+
+const direction = (xi: number, yi: number, xj: number, yj: number, xk: number, yk: number): number => {
+  return (xk - xi) * (yj - yi) - (yk - yi) * (xj - xi);
+};
+
+const onSegment = (xi: number, yi: number, xj: number, yj: number, xk: number, yk: number): boolean => {
+  return Math.min(xi, xj) <= xk && xk <= Math.max(xi, xj) &&
+         Math.min(yi, yj) <= yk && yk <= Math.max(yi, yj);
+};
+
+export const FEATURE_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: '灰坑', label: '灰坑 (H)' },
+  { value: '房址', label: '房址 (F)' },
+  { value: '墓葬', label: '墓葬 (M)' },
+  { value: '灶', label: '灶 (Z)' },
+  { value: '柱洞', label: '柱洞 (D)' },
+  { value: '沟', label: '沟 (G)' },
+  { value: '其他', label: '其他' },
+];
+
+export const FEATURE_TYPE_PREFIX: Record<string, string> = {
+  '灰坑': 'H',
+  '房址': 'F',
+  '墓葬': 'M',
+  '灶': 'Z',
+  '柱洞': 'D',
+  '沟': 'G',
+  '其他': 'Q',
+};
+
+export const generateFeatureNumber = (featureType: string, existingFeatures: { featureNumber: string; featureType: string }[]): string => {
+  const prefix = FEATURE_TYPE_PREFIX[featureType] || 'Q';
+  const existingNums = existingFeatures
+    .filter((f) => f.featureType === featureType)
+    .map((f) => {
+      const numStr = f.featureNumber.replace(prefix, '');
+      return parseInt(numStr, 10) || 0;
+    });
+  const maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 0;
+  return `${prefix}${maxNum + 1}`;
 };

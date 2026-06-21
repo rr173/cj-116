@@ -20,6 +20,8 @@ const TARGET_TYPE_OPTIONS: { value: TargetType | ''; label: string }[] = [
   { value: 'excavationLog', label: '发掘日志' },
   { value: 'relation', label: '地层关系' },
   { value: 'sample', label: '样品' },
+  { value: 'feature', label: '遗迹要素' },
+  { value: 'period', label: '时期' },
   { value: 'user', label: '用户' },
 ];
 
@@ -44,6 +46,8 @@ const TARGET_TYPE_LABELS: Record<TargetType, string> = {
   excavationLog: '发掘日志',
   relation: '地层关系',
   sample: '样品',
+  feature: '遗迹要素',
+  period: '时期',
   user: '用户',
 };
 

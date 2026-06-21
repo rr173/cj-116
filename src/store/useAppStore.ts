@@ -14,6 +14,11 @@ import {
   ExcavationLog,
   TimeSlot,
   WeatherType,
+  RelicFeature,
+  FeatureSpatialRelation,
+  Period,
+  FeatureType,
+  FeatureRelationType,
 } from '../types';
 import {
   generateId,
@@ -23,6 +28,9 @@ import {
   getUnitColor,
   formatDate,
   timestampToDateString,
+  computeCoveredCells,
+  polygonsIntersect,
+  PERIOD_COLORS,
 } from '../utils';
 import {
   checkActionPermission,
@@ -85,6 +93,31 @@ interface AppState {
   getPersonsByRole: (role: PersonRole) => Person[];
   getActivePersons: () => Person[];
 
+  features: RelicFeature[];
+  periods: Period[];
+  featureSpatialRelations: FeatureSpatialRelation[];
+  selectedFeatureId: string | null;
+
+  addFeature: (data: Omit<RelicFeature, 'id' | 'createdAt' | 'createdBy' | 'coveredCellIds'>) => RelicFeature;
+  updateFeature: (id: string, data: Partial<RelicFeature>) => void;
+  deleteFeature: (id: string) => void;
+  getFeaturesByTrench: (trenchId: string) => RelicFeature[];
+  getFeaturesByCell: (cellId: string) => RelicFeature[];
+  getFeaturesByUnit: (unitId: string) => RelicFeature[];
+  getFeaturesByPeriod: (periodId: string) => RelicFeature[];
+  setSelectedFeature: (id: string | null) => void;
+  detectSpatialRelations: (trenchId: string) => FeatureSpatialRelation[];
+  confirmSpatialRelation: (id: string) => void;
+  rejectSpatialRelation: (id: string) => void;
+
+  createPeriod: (data: Omit<Period, 'id' | 'createdAt' | 'color' | 'order'>) => Period;
+  updatePeriod: (id: string, data: Partial<Period>) => void;
+  deletePeriod: (id: string) => void;
+  getPeriodsByTrench: (trenchId: string) => Period[];
+  assignFeatureToPeriod: (featureId: string, periodId: string) => boolean;
+  unassignFeatureFromPeriod: (featureId: string) => void;
+  validatePeriodAssignment: (featureId: string, periodId: string) => { valid: boolean; warnings: string[] };
+
   addExcavationLog: (data: Omit<ExcavationLog, 'id' | 'newlyExposedCellIds' | 'newlyArtifactIds' | 'createdAt' | 'updatedAt'>) => ExcavationLog;
   updateExcavationLog: (id: string, data: Partial<Omit<ExcavationLog, 'id' | 'newlyExposedCellIds' | 'newlyArtifactIds' | 'createdAt'>>) => void;
   deleteExcavationLog: (id: string) => void;
@@ -106,6 +139,10 @@ export const useAppStore = create<AppState>()(
       artifacts: [],
       persons: [],
       excavationLogs: [],
+      features: [],
+      periods: [],
+      featureSpatialRelations: [],
+      selectedFeatureId: null,
       selectedTrenchId: null,
       selectedCellId: null,
       selectedUnitId: null,
@@ -154,6 +191,9 @@ export const useAppStore = create<AppState>()(
           units: state.units.filter((u) => u.trenchId !== id),
           relations: state.relations.filter((r) => r.trenchId !== id),
           artifacts: state.artifacts.filter((a) => a.trenchId !== id),
+          features: state.features.filter((f) => f.trenchId !== id),
+          periods: state.periods.filter((p) => p.trenchId !== id),
+          featureSpatialRelations: state.featureSpatialRelations.filter((r) => r.trenchId !== id),
           selectedTrenchId: state.selectedTrenchId === id ? null : state.selectedTrenchId,
           selectedCellId: null,
         }));
@@ -545,6 +585,275 @@ export const useAppStore = create<AppState>()(
 
       getActivePersons: () => {
         return get().persons.filter((p) => p.status === '在岗');
+      },
+
+      addFeature: (data) => {
+        if (!checkActionPermission('feature:create')) {
+          throw new Error('没有权限创建遗迹要素');
+        }
+        const currentUserId = getCurrentUserId();
+        const state = get();
+        const trenchCells = state.cells.filter((c) => c.trenchId === data.trenchId);
+        const coveredCellIds = computeCoveredCells(data.vertices, trenchCells);
+        const feature: RelicFeature = {
+          ...data,
+          id: generateId(),
+          coveredCellIds,
+          createdBy: currentUserId || undefined,
+          createdAt: Date.now(),
+        };
+        set((state) => ({
+          features: [...state.features, feature],
+        }));
+        logOperationToStorage({
+          operation: 'create',
+          targetType: 'feature',
+          targetId: feature.id,
+          targetName: feature.featureNumber,
+          details: `创建遗迹要素: ${feature.featureNumber} (${feature.featureType}), 覆盖${coveredCellIds.length}格`,
+        });
+        return feature;
+      },
+
+      updateFeature: (id, data) => {
+        const existing = get().features.find((f) => f.id === id);
+        if (!existing) return;
+        if (!checkActionPermission('feature:edit')) {
+          throw new Error('没有权限编辑遗迹要素');
+        }
+        let coveredCellIds = data.coveredCellIds;
+        if (data.vertices) {
+          const state = get();
+          const trenchCells = state.cells.filter((c) => c.trenchId === (data.trenchId || existing.trenchId));
+          coveredCellIds = computeCoveredCells(data.vertices, trenchCells);
+        }
+        logOperationToStorage({
+          operation: 'update',
+          targetType: 'feature',
+          targetId: id,
+          targetName: existing.featureNumber,
+          details: `更新遗迹要素: ${existing.featureNumber}`,
+        });
+        set((state) => ({
+          features: state.features.map((f) =>
+            f.id === id ? { ...f, ...data, coveredCellIds: coveredCellIds || f.coveredCellIds } : f
+          ),
+        }));
+      },
+
+      deleteFeature: (id) => {
+        if (!checkActionPermission('feature:delete')) {
+          throw new Error('没有权限删除遗迹要素');
+        }
+        const existing = get().features.find((f) => f.id === id);
+        logOperationToStorage({
+          operation: 'delete',
+          targetType: 'feature',
+          targetId: id,
+          targetName: existing?.featureNumber,
+          details: `删除遗迹要素: ${existing?.featureNumber || id}`,
+        });
+        set((state) => ({
+          features: state.features.filter((f) => f.id !== id),
+          featureSpatialRelations: state.featureSpatialRelations.filter(
+            (r) => r.featureIdA !== id && r.featureIdB !== id
+          ),
+        }));
+      },
+
+      getFeaturesByTrench: (trenchId) => {
+        return get().features.filter((f) => f.trenchId === trenchId);
+      },
+
+      getFeaturesByCell: (cellId) => {
+        return get().features.filter((f) => f.coveredCellIds.includes(cellId));
+      },
+
+      getFeaturesByUnit: (unitId) => {
+        return get().features.filter((f) => f.unitId === unitId);
+      },
+
+      getFeaturesByPeriod: (periodId) => {
+        return get().features.filter((f) => f.periodId === periodId);
+      },
+
+      setSelectedFeature: (id) => set({ selectedFeatureId: id }),
+
+      detectSpatialRelations: (trenchId) => {
+        const state = get();
+        const trenchFeatures = state.features.filter((f) => f.trenchId === trenchId);
+        const newRelations: FeatureSpatialRelation[] = [];
+
+        for (let i = 0; i < trenchFeatures.length; i++) {
+          for (let j = i + 1; j < trenchFeatures.length; j++) {
+            const a = trenchFeatures[i];
+            const b = trenchFeatures[j];
+
+            const existing = state.featureSpatialRelations.find(
+              (r) =>
+                (r.featureIdA === a.id && r.featureIdB === b.id) ||
+                (r.featureIdA === b.id && r.featureIdB === a.id)
+            );
+            if (existing) continue;
+
+            if (!polygonsIntersect(a.vertices, b.vertices)) continue;
+
+            let relationType: FeatureRelationType;
+            if (a.unitId === b.unitId) {
+              relationType = '共存';
+            } else {
+              relationType = a.topElevation > b.topElevation ? '打破' : '叠压';
+            }
+
+            const rel: FeatureSpatialRelation = {
+              id: generateId(),
+              trenchId,
+              featureIdA: a.id,
+              featureIdB: b.id,
+              type: relationType,
+              confirmed: false,
+              createdAt: Date.now(),
+            };
+            newRelations.push(rel);
+          }
+        }
+
+        if (newRelations.length > 0) {
+          set((state) => ({
+            featureSpatialRelations: [...state.featureSpatialRelations, ...newRelations],
+          }));
+        }
+
+        return newRelations;
+      },
+
+      confirmSpatialRelation: (id) => {
+        set((state) => ({
+          featureSpatialRelations: state.featureSpatialRelations.map((r) =>
+            r.id === id ? { ...r, confirmed: true } : r
+          ),
+        }));
+      },
+
+      rejectSpatialRelation: (id) => {
+        set((state) => ({
+          featureSpatialRelations: state.featureSpatialRelations.filter((r) => r.id !== id),
+        }));
+      },
+
+      createPeriod: (data) => {
+        if (!checkActionPermission('period:create')) {
+          throw new Error('没有权限创建时期');
+        }
+        const periodCount = get().periods.filter((p) => p.trenchId === data.trenchId).length;
+        const period: Period = {
+          ...data,
+          id: generateId(),
+          color: PERIOD_COLORS[periodCount % PERIOD_COLORS.length],
+          order: periodCount + 1,
+          createdAt: Date.now(),
+        };
+        set((state) => ({
+          periods: [...state.periods, period],
+        }));
+        logOperationToStorage({
+          operation: 'create',
+          targetType: 'period',
+          targetId: period.id,
+          targetName: period.name,
+          details: `创建时期: ${period.name} (${period.dateRange})`,
+        });
+        return period;
+      },
+
+      updatePeriod: (id, data) => {
+        if (!checkActionPermission('period:edit')) {
+          throw new Error('没有权限编辑时期');
+        }
+        set((state) => ({
+          periods: state.periods.map((p) => (p.id === id ? { ...p, ...data } : p)),
+        }));
+      },
+
+      deletePeriod: (id) => {
+        if (!checkActionPermission('period:delete')) {
+          throw new Error('没有权限删除时期');
+        }
+        set((state) => ({
+          periods: state.periods.filter((p) => p.id !== id),
+          features: state.features.map((f) =>
+            f.periodId === id ? { ...f, periodId: undefined } : f
+          ),
+        }));
+      },
+
+      getPeriodsByTrench: (trenchId) => {
+        return get()
+          .periods.filter((p) => p.trenchId === trenchId)
+          .sort((a, b) => a.order - b.order);
+      },
+
+      assignFeatureToPeriod: (featureId, periodId) => {
+        const validation = get().validatePeriodAssignment(featureId, periodId);
+        if (!validation.valid && !confirm(`${validation.warnings.join('\n')}\n\n是否强制分配？`)) {
+          return false;
+        }
+        set((state) => ({
+          features: state.features.map((f) =>
+            f.id === featureId ? { ...f, periodId } : f
+          ),
+        }));
+        return true;
+      },
+
+      unassignFeatureFromPeriod: (featureId) => {
+        set((state) => ({
+          features: state.features.map((f) =>
+            f.id === featureId ? { ...f, periodId: undefined } : f
+          ),
+        }));
+      },
+
+      validatePeriodAssignment: (featureId, periodId) => {
+        const state = get();
+        const feature = state.features.find((f) => f.id === featureId);
+        const period = state.periods.find((p) => p.id === periodId);
+        if (!feature || !period) return { valid: true, warnings: [] };
+
+        const warnings: string[] = [];
+        const featureUnit = state.units.find((u) => u.id === feature.unitId);
+        if (!featureUnit) return { valid: true, warnings };
+
+        const earlierUnits = new Set<string>();
+        const queue = [featureUnit.id];
+        const visited = new Set<string>();
+        while (queue.length > 0) {
+          const current = queue.shift()!;
+          if (visited.has(current)) continue;
+          visited.add(current);
+          const belowRelations = state.relations.filter(
+            (r) => r.fromUnitId === current && (r.type === '叠压' || r.type === '打破')
+          );
+          for (const rel of belowRelations) {
+            earlierUnits.add(rel.toUnitId);
+            queue.push(rel.toUnitId);
+          }
+        }
+
+        const featuresInEarlierUnits = state.features.filter(
+          (f) => f.id !== featureId && earlierUnits.has(f.unitId) && f.periodId
+        );
+
+        for (const earlierFeature of featuresInEarlierUnits) {
+          const earlierPeriod = state.periods.find((p) => p.id === earlierFeature.periodId);
+          if (earlierPeriod && earlierPeriod.order > period.order) {
+            warnings.push(
+              `要素所属地层单位"${featureUnit.code}"在Harris矩阵中位于"${earlierFeature.featureNumber}"所属地层单位之下（更早），但"${earlierFeature.featureNumber}"已分配至更晚时期"${earlierPeriod.name}"，当前分配的"${period.name}"时期序号更早，违反时序约束`
+            );
+          }
+        }
+
+        return { valid: warnings.length === 0, warnings };
       },
 
       addExcavationLog: (data) => {

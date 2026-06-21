@@ -16,6 +16,7 @@ import TimelinePanel from './components/TimelinePanel';
 import LoginPage from './components/LoginPage';
 import UserManagementPanel from './components/UserManagementPanel';
 import OperationLogsPanel from './components/OperationLogsPanel';
+import FeatureDrawingPanel from './components/FeatureDrawingPanel';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
 import { ViewType } from './types';
@@ -115,6 +116,8 @@ function App() {
         return <UserManagementPanel />;
       case 'operationLogs':
         return <OperationLogsPanel />;
+      case 'features':
+        return <FeatureDrawingPanel />;
       default:
         return <GridView />;
     }
