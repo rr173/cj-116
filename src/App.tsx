@@ -17,6 +17,7 @@ import LoginPage from './components/LoginPage';
 import UserManagementPanel from './components/UserManagementPanel';
 import OperationLogsPanel from './components/OperationLogsPanel';
 import FeatureDrawingPanel from './components/FeatureDrawingPanel';
+import ControlPointsPanel from './components/ControlPointsPanel';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
 import { ViewType } from './types';
@@ -118,6 +119,8 @@ function App() {
         return <OperationLogsPanel />;
       case 'features':
         return <FeatureDrawingPanel />;
+      case 'controlPoints':
+        return <ControlPointsPanel />;
       default:
         return <GridView />;
     }

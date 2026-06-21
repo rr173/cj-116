@@ -29,6 +29,7 @@ const ROLE_PERMISSIONS: Record<SystemRole, PermissionAction[]> = {
     'sample:create', 'sample:edit', 'sample:delete',
     'feature:create', 'feature:edit', 'feature:delete',
     'period:create', 'period:edit', 'period:delete',
+    'controlPoint:create', 'controlPoint:edit', 'controlPoint:delete', 'controlPoint:view',
     'user:create', 'user:edit', 'user:delete',
     'logs:view',
   ],
@@ -43,6 +44,7 @@ const ROLE_PERMISSIONS: Record<SystemRole, PermissionAction[]> = {
     'sample:create', 'sample:edit', 'sample:delete',
     'feature:create', 'feature:edit', 'feature:delete',
     'period:create', 'period:edit', 'period:delete',
+    'controlPoint:create', 'controlPoint:edit', 'controlPoint:delete', 'controlPoint:view',
     'logs:view',
   ],
   '记录员': [
@@ -52,8 +54,11 @@ const ROLE_PERMISSIONS: Record<SystemRole, PermissionAction[]> = {
     'excavationLog:create', 'excavationLog:edit',
     'feature:create', 'feature:edit',
     'period:create', 'period:edit',
+    'controlPoint:view',
   ],
-  '访客': [],
+  '访客': [
+    'controlPoint:view',
+  ],
 };
 
 export const hasPermission = (role: SystemRole, action: PermissionAction): boolean => {

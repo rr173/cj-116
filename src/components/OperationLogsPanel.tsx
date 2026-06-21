@@ -22,6 +22,7 @@ const TARGET_TYPE_OPTIONS: { value: TargetType | ''; label: string }[] = [
   { value: 'sample', label: '样品' },
   { value: 'feature', label: '遗迹要素' },
   { value: 'period', label: '时期' },
+  { value: 'controlPoint', label: '控制点' },
   { value: 'user', label: '用户' },
 ];
 
@@ -48,6 +49,7 @@ const TARGET_TYPE_LABELS: Record<TargetType, string> = {
   sample: '样品',
   feature: '遗迹要素',
   period: '时期',
+  controlPoint: '控制点',
   user: '用户',
 };
 

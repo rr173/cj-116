@@ -192,7 +192,7 @@ export type SystemRole = '管理员' | '领队' | '记录员' | '访客';
 
 export type OperationType = 'create' | 'update' | 'delete';
 
-export type TargetType = 'trench' | 'stratigraphy' | 'unit' | 'artifact' | 'person' | 'excavationLog' | 'relation' | 'sample' | 'user' | 'feature' | 'period';
+export type TargetType = 'trench' | 'stratigraphy' | 'unit' | 'artifact' | 'person' | 'excavationLog' | 'relation' | 'sample' | 'user' | 'feature' | 'period' | 'controlPoint';
 
 export interface User {
   id: string;
@@ -228,6 +228,8 @@ export type PermissionAction =
   | 'feature:create' | 'feature:edit' | 'feature:delete'
   | 'period:create' | 'period:edit' | 'period:delete'
   | 'user:create' | 'user:edit' | 'user:delete'
+  | 'controlPoint:create' | 'controlPoint:edit' | 'controlPoint:delete'
+  | 'controlPoint:view'
   | 'logs:view';
 
 export type FeatureType = '灰坑' | '房址' | '墓葬' | '灶' | '柱洞' | '沟' | '其他';
@@ -271,7 +273,53 @@ export interface Period {
   createdAt: number;
 }
 
-export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs' | 'features';
+export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs' | 'features' | 'controlPoints';
+
+export type ControlPointType = '基准点' | '加密点' | '临时点';
+
+export interface ControlPoint {
+  id: string;
+  trenchId: string;
+  code: string;
+  x: number;
+  y: number;
+  z: number;
+  type: ControlPointType;
+  measuredAt: number;
+  measuredBy: string;
+  createdAt: number;
+}
+
+export interface IDWResult {
+  elevation: number;
+  pointsUsed: { point: ControlPoint; distance: number; weight: number }[];
+  sufficientAccuracy: boolean;
+  warning?: string;
+}
+
+export interface ElevationAnomaly {
+  stratigraphyId: string;
+  cellId: string;
+  cellCode: string;
+  layerNumber: number;
+  topElevation: number;
+  bottomElevation: number;
+  interpolatedElevation: number;
+  topDeviation: number;
+  bottomDeviation: number;
+  anomalyType: 'top_high' | 'bottom_low' | 'both';
+}
+
+export interface ContourLine {
+  elevation: number;
+  points: { x: number; y: number }[];
+}
+
+export interface ContourConfig {
+  interval: number;
+  showLabels: boolean;
+  visible: boolean;
+}
 
 export type WeatherType = '晴' | '多云' | '阴' | '小雨' | '中雨' | '大雨' | '雪' | '雾' | '大风';
 

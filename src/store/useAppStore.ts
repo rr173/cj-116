@@ -19,6 +19,10 @@ import {
   Period,
   FeatureType,
   FeatureRelationType,
+  ControlPoint,
+  ControlPointType,
+  ElevationAnomaly,
+  ContourConfig,
 } from '../types';
 import {
   generateId,
@@ -32,6 +36,14 @@ import {
   polygonsIntersect,
   PERIOD_COLORS,
 } from '../utils';
+import {
+  interpolateIDW,
+  checkElevationAnomalies,
+  generateContours,
+  DEFAULT_CONTOUR_INTERVAL,
+  parseControlPointImport,
+  ControlPointImportRow,
+} from '../utils/survey';
 import {
   checkActionPermission,
   canEditOwnData,
@@ -126,6 +138,24 @@ interface AppState {
   getLogsByPerson: (personId: string) => ExcavationLog[];
   getCellsNewlyExposedOnDate: (date: string) => string[];
   getArtifactsNewlyCreatedOnDate: (date: string) => string[];
+
+  controlPoints: ControlPoint[];
+  selectedControlPointId: string | null;
+  contourConfig: ContourConfig;
+  showControlPointsOnMap: boolean;
+
+  addControlPoint: (data: Omit<ControlPoint, 'id' | 'createdAt'>) => ControlPoint | null;
+  updateControlPoint: (id: string, data: Partial<Omit<ControlPoint, 'id' | 'trenchId' | 'createdAt'>>) => void;
+  deleteControlPoint: (id: string) => void;
+  getControlPointsByTrench: (trenchId: string) => ControlPoint[];
+  getControlPointById: (id: string) => ControlPoint | undefined;
+  setSelectedControlPoint: (id: string | null) => void;
+  batchImportControlPoints: (trenchId: string, importText: string, defaultType: ControlPointType, measuredBy: string) => { success: number; failed: ControlPointImportRow[] };
+  interpolateElevationAt: (x: number, y: number, trenchId: string) => ReturnType<typeof interpolateIDW>;
+  getElevationAnomalies: (trenchId: string) => ElevationAnomaly[];
+  generateContoursForTrench: (trenchId: string, interval?: number) => ReturnType<typeof generateContours>;
+  setContourConfig: (config: Partial<ContourConfig>) => void;
+  setShowControlPointsOnMap: (show: boolean) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -146,6 +176,14 @@ export const useAppStore = create<AppState>()(
       selectedTrenchId: null,
       selectedCellId: null,
       selectedUnitId: null,
+      controlPoints: [],
+      selectedControlPointId: null,
+      contourConfig: {
+        interval: DEFAULT_CONTOUR_INTERVAL,
+        showLabels: true,
+        visible: false,
+      },
+      showControlPointsOnMap: true,
 
       createTrench: (data) => {
         if (!checkActionPermission('trench:create')) {
@@ -194,8 +232,10 @@ export const useAppStore = create<AppState>()(
           features: state.features.filter((f) => f.trenchId !== id),
           periods: state.periods.filter((p) => p.trenchId !== id),
           featureSpatialRelations: state.featureSpatialRelations.filter((r) => r.trenchId !== id),
+          controlPoints: state.controlPoints.filter((cp) => cp.trenchId !== id),
           selectedTrenchId: state.selectedTrenchId === id ? null : state.selectedTrenchId,
           selectedCellId: null,
+          selectedControlPointId: null,
         }));
       },
 
@@ -1002,6 +1042,231 @@ export const useAppStore = create<AppState>()(
             return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day;
           })
           .map((a) => a.id);
+      },
+
+      addControlPoint: (data) => {
+        if (!checkActionPermission('controlPoint:create')) {
+          throw new Error('没有权限创建控制点');
+        }
+        const state = get();
+        const existing = state.controlPoints.find(
+          (cp) => cp.trenchId === data.trenchId && cp.code === data.code
+        );
+        if (existing) {
+          return null;
+        }
+
+        const point: ControlPoint = {
+          ...data,
+          id: generateId(),
+          createdAt: Date.now(),
+        };
+
+        set((state) => ({
+          controlPoints: [...state.controlPoints, point],
+        }));
+
+        logOperationToStorage({
+          operation: 'create',
+          targetType: 'controlPoint',
+          targetId: point.id,
+          targetName: point.code,
+          details: `创建控制点: ${point.code} (${point.type}), 坐标(${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)})`,
+        });
+
+        return point;
+      },
+
+      updateControlPoint: (id, data) => {
+        if (!checkActionPermission('controlPoint:edit')) {
+          throw new Error('没有权限编辑控制点');
+        }
+        const existing = get().controlPoints.find((cp) => cp.id === id);
+        if (!existing) return;
+
+        if (existing.type === '基准点' && (data.x !== undefined || data.y !== undefined || data.z !== undefined)) {
+          throw new Error('基准点坐标不可修改');
+        }
+
+        if (data.code && data.code !== existing.code) {
+          const duplicate = get().controlPoints.find(
+            (cp) => cp.trenchId === existing.trenchId && cp.code === data.code && cp.id !== id
+          );
+          if (duplicate) {
+            throw new Error('控制点编号已存在');
+          }
+        }
+
+        const changes = Object.keys(data)
+          .map((k) => `${k}: ${existing[k as keyof typeof existing]} → ${data[k as keyof typeof data]}`)
+          .join(', ');
+
+        logOperationToStorage({
+          operation: 'update',
+          targetType: 'controlPoint',
+          targetId: id,
+          targetName: existing.code,
+          details: `更新控制点: ${existing.code}, ${changes}`,
+        });
+
+        set((state) => ({
+          controlPoints: state.controlPoints.map((cp) =>
+            cp.id === id ? { ...cp, ...data } : cp
+          ),
+        }));
+      },
+
+      deleteControlPoint: (id) => {
+        if (!checkActionPermission('controlPoint:delete')) {
+          throw new Error('没有权限删除控制点');
+        }
+        const existing = get().controlPoints.find((cp) => cp.id === id);
+        if (!existing) return;
+
+        if (existing.type === '基准点') {
+          throw new Error('基准点不可删除');
+        }
+
+        logOperationToStorage({
+          operation: 'delete',
+          targetType: 'controlPoint',
+          targetId: id,
+          targetName: existing.code,
+          details: `删除控制点: ${existing.code} (${existing.type})`,
+        });
+
+        set((state) => ({
+          controlPoints: state.controlPoints.filter((cp) => cp.id !== id),
+          selectedControlPointId: state.selectedControlPointId === id ? null : state.selectedControlPointId,
+        }));
+      },
+
+      getControlPointsByTrench: (trenchId) => {
+        return get().controlPoints.filter((cp) => cp.trenchId === trenchId);
+      },
+
+      getControlPointById: (id) => {
+        return get().controlPoints.find((cp) => cp.id === id);
+      },
+
+      setSelectedControlPoint: (id) => set({ selectedControlPointId: id }),
+
+      batchImportControlPoints: (trenchId, importText, defaultType, measuredBy) => {
+        if (!checkActionPermission('controlPoint:create')) {
+          throw new Error('没有权限创建控制点');
+        }
+
+        const rows = parseControlPointImport(importText);
+        const validRows = rows.filter((r) => r.valid);
+        const failedRows = rows.filter((r) => !r.valid);
+
+        const state = get();
+        const existingPoints = state.controlPoints.filter((cp) => cp.trenchId === trenchId);
+        const existingCodes = new Set(existingPoints.map((cp) => cp.code));
+
+        const newPoints: ControlPoint[] = [];
+        const actuallyFailed: ControlPointImportRow[] = [...failedRows];
+
+        for (const row of validRows) {
+          if (existingCodes.has(row.code)) {
+            actuallyFailed.push({
+              ...row,
+              valid: false,
+              errors: [...row.errors, '编号已存在'],
+            });
+            continue;
+          }
+
+          if (row.xNum === undefined || row.yNum === undefined || row.zNum === undefined) {
+            actuallyFailed.push({
+              ...row,
+              valid: false,
+              errors: [...row.errors, '坐标数据无效'],
+            });
+            continue;
+          }
+
+          const point: ControlPoint = {
+            id: generateId(),
+            trenchId,
+            code: row.code,
+            x: Math.round(row.xNum * 1000) / 1000,
+            y: Math.round(row.yNum * 1000) / 1000,
+            z: Math.round(row.zNum * 1000) / 1000,
+            type: defaultType,
+            measuredAt: Date.now(),
+            measuredBy,
+            createdAt: Date.now(),
+          };
+
+          newPoints.push(point);
+          existingCodes.add(row.code);
+        }
+
+        if (newPoints.length > 0) {
+          set((state) => ({
+            controlPoints: [...state.controlPoints, ...newPoints],
+          }));
+
+          logOperationToStorage({
+            operation: 'create',
+            targetType: 'controlPoint',
+            targetId: 'batch',
+            targetName: `批量导入${newPoints.length}个`,
+            details: `批量导入控制点: 成功${newPoints.length}个, 失败${actuallyFailed.length}个`,
+          });
+        }
+
+        return {
+          success: newPoints.length,
+          failed: actuallyFailed,
+        };
+      },
+
+      interpolateElevationAt: (x, y, trenchId) => {
+        const state = get();
+        const points = state.controlPoints.filter((cp) => cp.trenchId === trenchId);
+        return interpolateIDW(x, y, points);
+      },
+
+      getElevationAnomalies: (trenchId) => {
+        const state = get();
+        const cells = state.cells.filter((c) => c.trenchId === trenchId);
+        const strats = state.stratigraphies.filter((s) => s.trenchId === trenchId);
+        const points = state.controlPoints.filter((cp) => cp.trenchId === trenchId);
+        return checkElevationAnomalies(cells, strats, points);
+      },
+
+      generateContoursForTrench: (trenchId, interval) => {
+        const state = get();
+        const trench = state.trenches.find((t) => t.id === trenchId);
+        if (!trench) return [];
+
+        const points = state.controlPoints.filter((cp) => cp.trenchId === trenchId);
+        const cells = state.cells.filter((c) => c.trenchId === trenchId);
+
+        if (cells.length === 0) return [];
+
+        let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity;
+        for (const cell of cells) {
+          xMin = Math.min(xMin, cell.xMin);
+          yMin = Math.min(yMin, cell.yMin);
+          xMax = Math.max(xMax, cell.xMax);
+          yMax = Math.max(yMax, cell.yMax);
+        }
+
+        const contourInterval = interval ?? state.contourConfig.interval;
+        return generateContours(points, xMin, yMin, xMax, yMax, contourInterval);
+      },
+
+      setContourConfig: (config) => {
+        set((state) => ({
+          contourConfig: { ...state.contourConfig, ...config },
+        }));
+      },
+
+      setShowControlPointsOnMap: (show) => {
+        set({ showControlPointsOnMap: show });
       },
     }),
     {
