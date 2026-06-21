@@ -18,6 +18,7 @@ const viewNames: Record<ViewType, string> = {
   artifacts: '遗物登记',
   samples: '样品采集与送检',
   profile: '剖面图',
+  profileEditor: '剖面矢量编辑',
   features: '遗迹要素绘图与分期',
   controlPoints: '测量控制点',
   snapshots: '发掘进度快照与对比',

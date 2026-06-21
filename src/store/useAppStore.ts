@@ -23,6 +23,13 @@ import {
   ControlPointType,
   ElevationAnomaly,
   ContourConfig,
+  ProfileSection,
+  ProfileBoundaryLine,
+  ProfileCutLine,
+  ProfileAnnotation,
+  ProfileIntersection,
+  ProfileBezierPoint,
+  BoundaryType,
 } from '../types';
 import {
   generateId,
@@ -156,6 +163,34 @@ interface AppState {
   generateContoursForTrench: (trenchId: string, interval?: number) => ReturnType<typeof generateContours>;
   setContourConfig: (config: Partial<ContourConfig>) => void;
   setShowControlPointsOnMap: (show: boolean) => void;
+
+  profiles: ProfileSection[];
+  selectedProfileId: string | null;
+
+  createProfile: (data: Omit<ProfileSection, 'id' | 'createdAt' | 'updatedAt' | 'createdBy' | 'boundaryLines' | 'cutLines' | 'annotations'>) => ProfileSection;
+  updateProfile: (id: string, data: Partial<Omit<ProfileSection, 'id' | 'createdAt' | 'updatedAt' | 'createdBy' | 'boundaryLines' | 'cutLines' | 'annotations'>>) => void;
+  deleteProfile: (id: string) => void;
+  setSelectedProfile: (id: string | null) => void;
+  getProfilesByTrench: (trenchId: string) => ProfileSection[];
+  getProfileById: (id: string) => ProfileSection | undefined;
+
+  addBoundaryLine: (data: Omit<ProfileBoundaryLine, 'id' | 'createdAt' | 'updatedAt'>) => ProfileBoundaryLine;
+  updateBoundaryLine: (id: string, data: Partial<ProfileBoundaryLine>) => void;
+  deleteBoundaryLine: (id: string) => void;
+  getBoundaryLinesByProfile: (profileId: string) => ProfileBoundaryLine[];
+
+  addCutLine: (data: Omit<ProfileCutLine, 'id' | 'createdAt' | 'updatedAt'>) => ProfileCutLine;
+  updateCutLine: (id: string, data: Partial<ProfileCutLine>) => void;
+  deleteCutLine: (id: string) => void;
+  getCutLinesByProfile: (profileId: string) => ProfileCutLine[];
+
+  addAnnotation: (data: Omit<ProfileAnnotation, 'id' | 'createdAt' | 'updatedAt'>) => ProfileAnnotation;
+  updateAnnotation: (id: string, data: Partial<ProfileAnnotation>) => void;
+  deleteAnnotation: (id: string) => void;
+  getAnnotationsByProfile: (profileId: string) => ProfileAnnotation[];
+
+  getProfileIntersections: (trenchId: string) => ProfileIntersection[];
+  alignBoundaryAtIntersection: (intersectionId: string, sourceProfileId: string, unitId: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -184,6 +219,8 @@ export const useAppStore = create<AppState>()(
         visible: false,
       },
       showControlPointsOnMap: true,
+      profiles: [],
+      selectedProfileId: null,
 
       createTrench: (data) => {
         if (!checkActionPermission('trench:create')) {
@@ -1267,6 +1304,424 @@ export const useAppStore = create<AppState>()(
 
       setShowControlPointsOnMap: (show) => {
         set({ showControlPointsOnMap: show });
+      },
+
+      createProfile: (data) => {
+        if (!checkActionPermission('stratigraphy:create')) {
+          throw new Error('没有权限创建剖面');
+        }
+        const currentUserId = getCurrentUserId();
+        const now = Date.now();
+        const profile: ProfileSection = {
+          ...data,
+          id: generateId(),
+          boundaryLines: [],
+          cutLines: [],
+          annotations: [],
+          createdAt: now,
+          updatedAt: now,
+          createdBy: currentUserId || undefined,
+        };
+        set((state) => ({
+          profiles: [...state.profiles, profile],
+          selectedProfileId: state.selectedProfileId || profile.id,
+        }));
+        logOperationToStorage({
+          operation: 'create',
+          targetType: 'stratigraphy',
+          targetId: profile.id,
+          targetName: profile.name,
+          details: `创建剖面: ${profile.name}`,
+        });
+        return profile;
+      },
+
+      updateProfile: (id, data) => {
+        if (!checkActionPermission('stratigraphy:edit')) {
+          throw new Error('没有权限编辑剖面');
+        }
+        const existing = get().profiles.find((p) => p.id === id);
+        if (!existing) return;
+        logOperationToStorage({
+          operation: 'update',
+          targetType: 'stratigraphy',
+          targetId: id,
+          targetName: existing.name,
+          details: `更新剖面: ${existing.name}`,
+        });
+        set((state) => ({
+          profiles: state.profiles.map((p) =>
+            p.id === id ? { ...p, ...data, updatedAt: Date.now() } : p
+          ),
+        }));
+      },
+
+      deleteProfile: (id) => {
+        if (!checkActionPermission('stratigraphy:delete')) {
+          throw new Error('没有权限删除剖面');
+        }
+        const existing = get().profiles.find((p) => p.id === id);
+        logOperationToStorage({
+          operation: 'delete',
+          targetType: 'stratigraphy',
+          targetId: id,
+          targetName: existing?.name,
+          details: `删除剖面: ${existing?.name || id}`,
+        });
+        set((state) => ({
+          profiles: state.profiles.filter((p) => p.id !== id),
+          selectedProfileId: state.selectedProfileId === id ? null : state.selectedProfileId,
+        }));
+      },
+
+      setSelectedProfile: (id) => set({ selectedProfileId: id }),
+
+      getProfilesByTrench: (trenchId) => {
+        return get().profiles.filter((p) => p.trenchId === trenchId);
+      },
+
+      getProfileById: (id) => {
+        return get().profiles.find((p) => p.id === id);
+      },
+
+      addBoundaryLine: (data) => {
+        if (!checkActionPermission('stratigraphy:create')) {
+          throw new Error('没有权限添加界面线');
+        }
+        const now = Date.now();
+        const line: ProfileBoundaryLine = {
+          ...data,
+          id: generateId(),
+          createdAt: now,
+          updatedAt: now,
+        };
+        set((state) => ({
+          profiles: state.profiles.map((p) =>
+            p.id === data.profileId
+              ? { ...p, boundaryLines: [...p.boundaryLines, line], updatedAt: now }
+              : p
+          ),
+        }));
+        logOperationToStorage({
+          operation: 'create',
+          targetType: 'stratigraphy',
+          targetId: line.id,
+          targetName: `${data.type === 'top' ? '顶面' : '底面'}线`,
+          details: `添加地层界面线: ${data.type === 'top' ? '顶面' : '底面'}`,
+        });
+        return line;
+      },
+
+      updateBoundaryLine: (id, data) => {
+        if (!checkActionPermission('stratigraphy:edit')) {
+          throw new Error('没有权限编辑界面线');
+        }
+        const now = Date.now();
+        set((state) => ({
+          profiles: state.profiles.map((p) => ({
+            ...p,
+            boundaryLines: p.boundaryLines.map((l) =>
+              l.id === id ? { ...l, ...data, updatedAt: now } : l
+            ),
+            updatedAt: p.boundaryLines.some((l) => l.id === id) ? now : p.updatedAt,
+          })),
+        }));
+        logOperationToStorage({
+          operation: 'update',
+          targetType: 'stratigraphy',
+          targetId: id,
+          details: `更新地层界面线`,
+        });
+      },
+
+      deleteBoundaryLine: (id) => {
+        if (!checkActionPermission('stratigraphy:delete')) {
+          throw new Error('没有权限删除界面线');
+        }
+        const now = Date.now();
+        set((state) => ({
+          profiles: state.profiles.map((p) => ({
+            ...p,
+            boundaryLines: p.boundaryLines.filter((l) => l.id !== id),
+            updatedAt: p.boundaryLines.some((l) => l.id === id) ? now : p.updatedAt,
+          })),
+        }));
+        logOperationToStorage({
+          operation: 'delete',
+          targetType: 'stratigraphy',
+          targetId: id,
+          details: `删除地层界面线`,
+        });
+      },
+
+      getBoundaryLinesByProfile: (profileId) => {
+        const profile = get().profiles.find((p) => p.id === profileId);
+        return profile ? profile.boundaryLines : [];
+      },
+
+      addCutLine: (data) => {
+        if (!checkActionPermission('feature:create')) {
+          throw new Error('没有权限添加打破线');
+        }
+        const now = Date.now();
+        const line: ProfileCutLine = {
+          ...data,
+          id: generateId(),
+          createdAt: now,
+          updatedAt: now,
+        };
+        set((state) => ({
+          profiles: state.profiles.map((p) =>
+            p.id === data.profileId
+              ? { ...p, cutLines: [...p.cutLines, line], updatedAt: now }
+              : p
+          ),
+        }));
+        logOperationToStorage({
+          operation: 'create',
+          targetType: 'feature',
+          targetId: line.id,
+          targetName: data.featureNumber,
+          details: `添加打破线: ${data.featureNumber}`,
+        });
+        return line;
+      },
+
+      updateCutLine: (id, data) => {
+        if (!checkActionPermission('feature:edit')) {
+          throw new Error('没有权限编辑打破线');
+        }
+        const now = Date.now();
+        set((state) => ({
+          profiles: state.profiles.map((p) => ({
+            ...p,
+            cutLines: p.cutLines.map((l) =>
+              l.id === id ? { ...l, ...data, updatedAt: now } : l
+            ),
+            updatedAt: p.cutLines.some((l) => l.id === id) ? now : p.updatedAt,
+          })),
+        }));
+      },
+
+      deleteCutLine: (id) => {
+        if (!checkActionPermission('feature:delete')) {
+          throw new Error('没有权限删除打破线');
+        }
+        const now = Date.now();
+        set((state) => ({
+          profiles: state.profiles.map((p) => ({
+            ...p,
+            cutLines: p.cutLines.filter((l) => l.id !== id),
+            updatedAt: p.cutLines.some((l) => l.id === id) ? now : p.updatedAt,
+          })),
+        }));
+      },
+
+      getCutLinesByProfile: (profileId) => {
+        const profile = get().profiles.find((p) => p.id === profileId);
+        return profile ? profile.cutLines : [];
+      },
+
+      addAnnotation: (data) => {
+        if (!checkActionPermission('stratigraphy:create')) {
+          throw new Error('没有权限添加注记');
+        }
+        const now = Date.now();
+        const annotation: ProfileAnnotation = {
+          ...data,
+          id: generateId(),
+          createdAt: now,
+          updatedAt: now,
+        };
+        set((state) => ({
+          profiles: state.profiles.map((p) =>
+            p.id === data.profileId
+              ? { ...p, annotations: [...p.annotations, annotation], updatedAt: now }
+              : p
+          ),
+        }));
+        return annotation;
+      },
+
+      updateAnnotation: (id, data) => {
+        if (!checkActionPermission('stratigraphy:edit')) {
+          throw new Error('没有权限编辑注记');
+        }
+        const now = Date.now();
+        set((state) => ({
+          profiles: state.profiles.map((p) => ({
+            ...p,
+            annotations: p.annotations.map((a) =>
+              a.id === id ? { ...a, ...data, updatedAt: now } : a
+            ),
+            updatedAt: p.annotations.some((a) => a.id === id) ? now : p.updatedAt,
+          })),
+        }));
+      },
+
+      deleteAnnotation: (id) => {
+        if (!checkActionPermission('stratigraphy:delete')) {
+          throw new Error('没有权限删除注记');
+        }
+        const now = Date.now();
+        set((state) => ({
+          profiles: state.profiles.map((p) => ({
+            ...p,
+            annotations: p.annotations.filter((a) => a.id !== id),
+            updatedAt: p.annotations.some((a) => a.id === id) ? now : p.updatedAt,
+          })),
+        }));
+      },
+
+      getAnnotationsByProfile: (profileId) => {
+        const profile = get().profiles.find((p) => p.id === profileId);
+        return profile ? profile.annotations : [];
+      },
+
+      getProfileIntersections: (trenchId) => {
+        const state = get();
+        const profiles = state.profiles.filter((p) => p.trenchId === trenchId);
+        const intersections: ProfileIntersection[] = [];
+
+        for (let i = 0; i < profiles.length; i++) {
+          for (let j = i + 1; j < profiles.length; j++) {
+            const profileA = profiles[i];
+            const profileB = profiles[j];
+
+            const sharedCells = profileA.cellIds.filter((cid) =>
+              profileB.cellIds.includes(cid)
+            );
+
+            for (const cellId of sharedCells) {
+              const cell = state.cells.find((c) => c.id === cellId);
+              if (!cell) continue;
+
+              const idxA = profileA.cellIds.indexOf(cellId);
+              const idxB = profileB.cellIds.indexOf(cellId);
+
+              const distanceA = idxA * (profileA.totalLength / profileA.cellIds.length) +
+                (profileA.totalLength / profileA.cellIds.length / 2);
+              const distanceB = idxB * (profileB.totalLength / profileB.cellIds.length) +
+                (profileB.totalLength / profileB.cellIds.length / 2);
+
+              const unitIds = new Set<string>();
+              profileA.boundaryLines.forEach((l) => unitIds.add(l.unitId));
+              profileB.boundaryLines.forEach((l) => unitIds.add(l.unitId));
+
+              for (const unitId of unitIds) {
+                const getElevationAt = (
+                  profile: ProfileSection,
+                  distance: number,
+                  unitId: string,
+                  type: BoundaryType
+                ): number | undefined => {
+                  const line = profile.boundaryLines.find(
+                    (l) => l.unitId === unitId && l.type === type
+                  );
+                  if (!line || line.points.length < 2) return undefined;
+
+                  const totalDist = profile.totalLength;
+                  const xRatio = distance / totalDist;
+                  const pointIdx = Math.floor(xRatio * (line.points.length - 1));
+                  const nextIdx = Math.min(pointIdx + 1, line.points.length - 1);
+
+                  if (pointIdx >= line.points.length) return undefined;
+
+                  const p1 = line.points[pointIdx];
+                  const p2 = line.points[nextIdx];
+                  const localT = (xRatio * (line.points.length - 1)) % 1;
+
+                  return p1.y + (p2.y - p1.y) * localT;
+                };
+
+                const elevA = getElevationAt(profileA, distanceA, unitId, 'top');
+                const elevB = getElevationAt(profileB, distanceB, unitId, 'top');
+
+                if (elevA !== undefined && elevB !== undefined) {
+                  const deviation = Math.abs(elevA - elevB);
+                  intersections.push({
+                    id: generateId(),
+                    profileIdA: profileA.id,
+                    profileIdB: profileB.id,
+                    cellId,
+                    distanceA,
+                    distanceB,
+                    elevationA: elevA,
+                    elevationB: elevB,
+                    unitId,
+                    aligned: deviation <= 0.05,
+                    deviation,
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        return intersections;
+      },
+
+      alignBoundaryAtIntersection: (intersectionId, sourceProfileId, unitId) => {
+        const state = get();
+        const intersections = state.getProfileIntersections(state.selectedTrenchId || '');
+        const intersection = intersections.find((i) => i.id === intersectionId);
+        if (!intersection) return;
+
+        const targetProfileId =
+          intersection.profileIdA === sourceProfileId
+            ? intersection.profileIdB
+            : intersection.profileIdA;
+
+        const sourceElevation =
+          intersection.profileIdA === sourceProfileId
+            ? intersection.elevationA
+            : intersection.elevationB;
+
+        if (sourceElevation === undefined) return;
+
+        const targetDistance =
+          intersection.profileIdA === sourceProfileId
+            ? intersection.distanceB
+            : intersection.distanceA;
+
+        set((state) => ({
+          profiles: state.profiles.map((p) => {
+            if (p.id !== targetProfileId) return p;
+
+            const totalDist = p.totalLength;
+            const xRatio = targetDistance / totalDist;
+
+            return {
+              ...p,
+              boundaryLines: p.boundaryLines.map((l) => {
+                if (l.unitId !== unitId) return l;
+
+                const pointIdx = Math.floor(xRatio * (l.points.length - 1));
+                if (pointIdx < 0 || pointIdx >= l.points.length) return l;
+
+                const newPoints = [...l.points];
+                newPoints[pointIdx] = {
+                  ...newPoints[pointIdx],
+                  y: sourceElevation,
+                };
+
+                return {
+                  ...l,
+                  points: newPoints,
+                  updatedAt: Date.now(),
+                };
+              }),
+              updatedAt: Date.now(),
+            };
+          }),
+        }));
+
+        logOperationToStorage({
+          operation: 'update',
+          targetType: 'stratigraphy',
+          targetId: targetProfileId,
+          details: `对齐剖面标高，单位ID: ${unitId}, 标高: ${sourceElevation.toFixed(3)}m`,
+        });
       },
     }),
     {

@@ -273,8 +273,6 @@ export interface Period {
   createdAt: number;
 }
 
-export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs' | 'features' | 'controlPoints' | 'snapshots';
-
 export type ControlPointType = '基准点' | '加密点' | '临时点';
 
 export interface ControlPoint {
@@ -392,3 +390,109 @@ export interface SnapshotCompareResult {
     status: 'new' | 'deepened' | 'unchanged';
   }>;
 }
+
+export type ProfileEditorTool = 'select' | 'boundary' | 'cut' | 'annotation' | 'pan' | 'zoom';
+
+export type BoundaryType = 'top' | 'bottom';
+
+export interface ProfileBezierPoint {
+  x: number;
+  y: number;
+  cp1x?: number;
+  cp1y?: number;
+  cp2x?: number;
+  cp2y?: number;
+}
+
+export interface ProfileBoundaryLine {
+  id: string;
+  profileId: string;
+  trenchId: string;
+  unitId: string;
+  type: BoundaryType;
+  points: ProfileBezierPoint[];
+  strokeColor: string;
+  strokeWidth: number;
+  visible: boolean;
+  locked: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ProfileCutLine {
+  id: string;
+  profileId: string;
+  trenchId: string;
+  featureId: string;
+  featureNumber: string;
+  points: ProfileBezierPoint[];
+  strokeColor: string;
+  strokeWidth: number;
+  dashArray: string;
+  visible: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ProfileAnnotation {
+  id: string;
+  profileId: string;
+  trenchId: string;
+  text: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  rotation: number;
+  color: string;
+  visible: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ProfileElevationReference {
+  cellId: string;
+  stratigraphyId: string;
+  distance: number;
+  topElevation: number;
+  bottomElevation: number;
+  layerNumber: number;
+  unitId?: string;
+}
+
+export interface ProfileIntersection {
+  id: string;
+  profileIdA: string;
+  profileIdB: string;
+  cellId: string;
+  distanceA: number;
+  distanceB: number;
+  elevationA?: number;
+  elevationB?: number;
+  unitId?: string;
+  aligned: boolean;
+  deviation: number;
+}
+
+export interface ProfileSection {
+  id: string;
+  trenchId: string;
+  name: string;
+  description: string;
+  startCellId: string;
+  endCellId: string;
+  direction: 'horizontal' | 'vertical' | 'diagonal';
+  cellIds: string[];
+  minElevation: number;
+  maxElevation: number;
+  totalLength: number;
+  width: number;
+  height: number;
+  boundaryLines: ProfileBoundaryLine[];
+  cutLines: ProfileCutLine[];
+  annotations: ProfileAnnotation[];
+  createdAt: number;
+  updatedAt: number;
+  createdBy?: string;
+}
+
+export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'profileEditor' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs' | 'features' | 'controlPoints' | 'snapshots';

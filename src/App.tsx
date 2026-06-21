@@ -7,6 +7,7 @@ import UnitsPanel from './components/UnitsPanel';
 import HarrisMatrixView from './components/HarrisMatrixView';
 import ArtifactsPanel from './components/ArtifactsPanel';
 import ProfileView from './components/ProfileView';
+import ProfileVectorEditor from './components/ProfileVectorEditor';
 import WelcomeScreen from './components/WelcomeScreen';
 import SamplesPanel from './components/SamplesPanel';
 import PersonnelPanel from './components/PersonnelPanel';
@@ -106,6 +107,8 @@ function App() {
         return <SamplesPanel />;
       case 'profile':
         return <ProfileView />;
+      case 'profileEditor':
+        return <ProfileVectorEditor />;
       case 'personnel':
         return <PersonnelPanel />;
       case 'logs':
