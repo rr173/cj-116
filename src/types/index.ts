@@ -273,7 +273,7 @@ export interface Period {
   createdAt: number;
 }
 
-export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs' | 'features' | 'controlPoints';
+export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs' | 'features' | 'controlPoints' | 'snapshots';
 
 export type ControlPointType = '基准点' | '加密点' | '临时点';
 
@@ -340,4 +340,55 @@ export interface ExcavationLog {
   newlyArtifactIds: string[];
   createdAt: number;
   updatedAt: number;
+}
+
+export interface SnapshotCellState {
+  cellId: string;
+  deepestLayerNumber: number;
+  stratigraphyCount: number;
+  featureIds: string[];
+}
+
+export interface Snapshot {
+  id: string;
+  trenchId: string;
+  name: string;
+  remark: string;
+  createdAt: number;
+  createdBy?: string;
+  cellStates: SnapshotCellState[];
+  totalArtifacts: number;
+  totalSamples: number;
+  totalStratigraphies: number;
+  totalRelations: number;
+  totalFeatures: number;
+  exposedCellCount: number;
+  totalCellCount: number;
+  featureSnapshots: Array<{
+    id: string;
+    featureNumber: string;
+    featureType: FeatureType;
+    coveredCellIds: string[];
+    topElevation: number;
+    bottomElevation: number;
+  }>;
+}
+
+export type SnapshotViewMode = 'list' | 'timeline' | 'review' | 'compare' | 'stats';
+
+export interface SnapshotCompareResult {
+  snapshotA: Snapshot;
+  snapshotB: Snapshot;
+  newlyExposedCells: string[];
+  deepenedCells: string[];
+  unchangedCells: string[];
+  newStratigraphies: number;
+  newArtifacts: number;
+  newFeatures: number;
+  newRelations: number;
+  newSamples: number;
+  cellDifferences: Record<string, {
+    layerDelta: number;
+    status: 'new' | 'deepened' | 'unchanged';
+  }>;
 }

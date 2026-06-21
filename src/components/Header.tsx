@@ -20,6 +20,7 @@ const viewNames: Record<ViewType, string> = {
   profile: '剖面图',
   features: '遗迹要素绘图与分期',
   controlPoints: '测量控制点',
+  snapshots: '发掘进度快照与对比',
   personnel: '人员库',
   logs: '发掘日志',
   workhours: '工时统计',
