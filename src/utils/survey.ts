@@ -30,22 +30,24 @@ export const interpolateIDW = (
       point,
       distance: calculateDistance(x, y, point.x, point.y),
     }))
-    .filter((p) => p.distance <= maxDistance)
     .sort((a, b) => a.distance - b.distance);
 
-  const nearbyPoints = pointsWithDistance.slice(0, maxPoints);
+  const nearestPoints = pointsWithDistance.slice(0, maxPoints);
+  const pointsWithinDistance = nearestPoints.filter((p) => p.distance <= maxDistance);
 
-  const sufficientAccuracy = nearbyPoints.length >= IDW_MIN_POINTS_FOR_ACCURACY;
+  const sufficientAccuracy = pointsWithinDistance.length >= IDW_MIN_POINTS_FOR_ACCURACY;
   const warning = !sufficientAccuracy
-    ? `200米范围内控制点不足${IDW_MIN_POINTS_FOR_ACCURACY}个，插值精度不足`
+    ? `最近${maxPoints}个点中，200米范围内只有${pointsWithinDistance.length}个，插值精度不足`
     : undefined;
+
+  const nearbyPoints = nearestPoints;
 
   if (nearbyPoints.length === 0) {
     return {
       elevation: 0,
       pointsUsed: [],
       sufficientAccuracy: false,
-      warning: '200米范围内无控制点，无法插值',
+      warning: '无可用控制点，无法插值',
     };
   }
 
