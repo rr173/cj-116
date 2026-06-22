@@ -22,6 +22,7 @@ const viewNames: Record<ViewType, string> = {
   features: '遗迹要素绘图与分期',
   controlPoints: '测量控制点',
   snapshots: '发掘进度快照与对比',
+  spatialAnalysis: '遗物空间分布分析',
   personnel: '人员库',
   logs: '发掘日志',
   workhours: '工时统计',

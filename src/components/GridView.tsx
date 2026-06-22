@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { SOIL_COLORS } from '../utils';
 import SurveyMapOverlay from './SurveyMapOverlay';
+import SpatialAnalysisOverlay from './SpatialAnalysisOverlay';
 import { CONTROL_POINT_TYPE_COLORS, CONTROL_POINT_TYPE_ICONS } from '../utils/survey';
 import { ControlPointType, IDWResult } from '../types';
 
@@ -16,6 +17,8 @@ export default function GridView() {
   const setContourConfig = useAppStore((state) => state.setContourConfig);
   const showControlPointsOnMap = useAppStore((state) => state.showControlPointsOnMap);
   const setShowControlPointsOnMap = useAppStore((state) => state.setShowControlPointsOnMap);
+  const densityHeatmapConfig = useAppStore((state) => state.densityHeatmapConfig);
+  const setDensityHeatmapConfig = useAppStore((state) => state.setDensityHeatmapConfig);
   const interpolateElevationAt = useAppStore((state) => state.interpolateElevationAt);
   const selectedTrench = useAppStore((state) =>
     state.trenches.find((t) => t.id === selectedTrenchId)
@@ -145,6 +148,22 @@ export default function GridView() {
             }`}
           >
             {showControlPointsOnMap ? '✓ 显示' : '显示'}
+          </button>
+        </div>
+
+        <div className="w-px h-6 bg-gray-200" />
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">遗物热力图:</span>
+          <button
+            onClick={() => setDensityHeatmapConfig({ visible: !densityHeatmapConfig.visible })}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              densityHeatmapConfig.visible
+                ? 'bg-red-100 text-red-700'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {densityHeatmapConfig.visible ? '✓ 显示' : '显示'}
           </button>
         </div>
 
@@ -315,6 +334,17 @@ export default function GridView() {
                   onQueryElevation={handleQueryElevation}
                   queryResult={queryResult}
                   queryPosition={queryPosition}
+                />
+              )}
+              {selectedTrenchId && (
+                <SpatialAnalysisOverlay
+                  trenchId={selectedTrenchId}
+                  xMin={xMin}
+                  yMin={yMin}
+                  xMax={xMax}
+                  yMax={yMax}
+                  pixelWidth={pixelWidth}
+                  pixelHeight={pixelHeight}
                 />
               )}
             </svg>

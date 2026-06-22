@@ -535,4 +535,83 @@ export interface ProfileSection {
   createdBy?: string;
 }
 
-export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'profileEditor' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs' | 'features' | 'controlPoints' | 'snapshots';
+export interface DensityGridCell {
+  gridX: number;
+  gridY: number;
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+  count: number;
+  artifactIds: string[];
+}
+
+export interface DensityHeatmapConfig {
+  visible: boolean;
+  gridSize: number;
+  selectedCategory: ArtifactCategory | 'all';
+}
+
+export interface BufferQueryResult {
+  centerX: number;
+  centerY: number;
+  radius: number;
+  featureId?: string;
+  bufferPolygon: Coordinate[];
+  artifacts: Artifact[];
+}
+
+export interface BufferQueryConfig {
+  active: boolean;
+  mode: 'point' | 'feature';
+  radius: number;
+  centerPoint: { x: number; y: number } | null;
+  selectedFeatureId: string | null;
+}
+
+export interface NearestNeighborResult {
+  artifactId: string;
+  neighbors: { artifact: Artifact; distance: number }[];
+}
+
+export interface NearestNeighborConfig {
+  active: boolean;
+  artifactId: string | null;
+  neighborCount: number;
+}
+
+export interface DistributionStats {
+  count: number;
+  boundingBox: {
+    xMin: number;
+    xMax: number;
+    yMin: number;
+    yMax: number;
+    width: number;
+    height: number;
+  };
+  elevationRange: {
+    min: number;
+    max: number;
+    range: number;
+  };
+  averageNearestNeighborDistance: number;
+}
+
+export interface ArtifactCluster {
+  id: string;
+  memberIds: string[];
+  members: Artifact[];
+  convexHull: Coordinate[];
+  centroid: Coordinate;
+}
+
+export interface ClusterConfig {
+  visible: boolean;
+  distanceThreshold: number;
+  minClusterSize: number;
+}
+
+export type SpatialAnalysisTab = 'heatmap' | 'buffer' | 'nearest' | 'stats' | 'cluster';
+
+export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'profileEditor' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs' | 'features' | 'controlPoints' | 'snapshots' | 'spatialAnalysis';

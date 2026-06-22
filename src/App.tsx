@@ -20,6 +20,7 @@ import OperationLogsPanel from './components/OperationLogsPanel';
 import FeatureDrawingPanel from './components/FeatureDrawingPanel';
 import ControlPointsPanel from './components/ControlPointsPanel';
 import SnapshotPanel from './components/SnapshotPanel';
+import SpatialAnalysisPanel from './components/SpatialAnalysisPanel';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
 import { ViewType } from './types';
@@ -127,6 +128,8 @@ function App() {
         return <ControlPointsPanel />;
       case 'snapshots':
         return <SnapshotPanel />;
+      case 'spatialAnalysis':
+        return <SpatialAnalysisPanel />;
       default:
         return <GridView />;
     }

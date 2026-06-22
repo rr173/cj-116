@@ -33,6 +33,15 @@ import {
   ProfileIntersection,
   ProfileBezierPoint,
   BoundaryType,
+  DensityHeatmapConfig,
+  BufferQueryConfig,
+  NearestNeighborConfig,
+  ClusterConfig,
+  DensityGridCell,
+  DistributionStats,
+  ArtifactCluster,
+  BufferQueryResult,
+  NearestNeighborResult,
 } from '../types';
 import {
   generateId,
@@ -54,6 +63,16 @@ import {
   parseControlPointImport,
   ControlPointImportRow,
 } from '../utils/survey';
+import {
+  generateDensityGrid,
+  getArtifactsInFeatureBuffer,
+  generateCirclePolygon,
+  pointInPolygon,
+  findNearestNeighbors,
+  calculateDistributionStats,
+  clusterArtifacts,
+  filterArtifactsByCategory,
+} from '../utils/spatialAnalysis';
 import {
   checkActionPermission,
   canEditOwnData,
@@ -203,6 +222,22 @@ interface AppState {
   matchArtifactSubtype: (typeText: string) => ArtifactSubtype | null;
   autoAssignSubtypes: () => { matched: number; unmatched: number };
   assignArtifactToSubtype: (artifactId: string, subtypeId: string) => void;
+
+  densityHeatmapConfig: DensityHeatmapConfig;
+  bufferQueryConfig: BufferQueryConfig;
+  nearestNeighborConfig: NearestNeighborConfig;
+  clusterConfig: ClusterConfig;
+
+  setDensityHeatmapConfig: (config: Partial<DensityHeatmapConfig>) => void;
+  setBufferQueryConfig: (config: Partial<BufferQueryConfig>) => void;
+  setNearestNeighborConfig: (config: Partial<NearestNeighborConfig>) => void;
+  setClusterConfig: (config: Partial<ClusterConfig>) => void;
+
+  getDensityGrid: (trenchId: string) => DensityGridCell[];
+  getBufferQueryResult: (trenchId: string) => BufferQueryResult | null;
+  getNearestNeighbors: (trenchId: string) => NearestNeighborResult | null;
+  getDistributionStats: (artifactIds?: string[]) => DistributionStats;
+  getArtifactClusters: (trenchId: string) => ArtifactCluster[];
 }
 
 export const useAppStore = create<AppState>()(
@@ -234,6 +269,29 @@ export const useAppStore = create<AppState>()(
       profiles: [],
       selectedProfileId: null,
       artifactSubtypes: [],
+
+      densityHeatmapConfig: {
+        visible: false,
+        gridSize: 0.5,
+        selectedCategory: 'all',
+      },
+      bufferQueryConfig: {
+        active: false,
+        mode: 'point',
+        radius: 1,
+        centerPoint: null,
+        selectedFeatureId: null,
+      },
+      nearestNeighborConfig: {
+        active: false,
+        artifactId: null,
+        neighborCount: 5,
+      },
+      clusterConfig: {
+        visible: false,
+        distanceThreshold: 0.3,
+        minClusterSize: 3,
+      },
 
       createTrench: (data) => {
         if (!checkActionPermission('trench:create')) {
@@ -1858,6 +1916,156 @@ export const useAppStore = create<AppState>()(
             a.id === artifactId ? { ...a, subtypeId } : a
           ),
         }));
+      },
+
+      setDensityHeatmapConfig: (config) => {
+        set((state) => ({
+          densityHeatmapConfig: { ...state.densityHeatmapConfig, ...config },
+        }));
+      },
+
+      setBufferQueryConfig: (config) => {
+        set((state) => ({
+          bufferQueryConfig: { ...state.bufferQueryConfig, ...config },
+        }));
+      },
+
+      setNearestNeighborConfig: (config) => {
+        set((state) => ({
+          nearestNeighborConfig: { ...state.nearestNeighborConfig, ...config },
+        }));
+      },
+
+      setClusterConfig: (config) => {
+        set((state) => ({
+          clusterConfig: { ...state.clusterConfig, ...config },
+        }));
+      },
+
+      getDensityGrid: (trenchId) => {
+        const state = get();
+        const trench = state.trenches.find((t) => t.id === trenchId);
+        if (!trench) return [];
+
+        const allArtifacts = state.artifacts.filter((a) => a.trenchId === trenchId);
+        const filteredArtifacts = filterArtifactsByCategory(
+          allArtifacts,
+          state.densityHeatmapConfig.selectedCategory,
+          state.artifactSubtypes
+        );
+
+        const xMin = trench.originX;
+        const yMin = trench.originY;
+        const xMax = trench.originX + trench.cols * trench.cellSize;
+        const yMax = trench.originY + trench.rows * trench.cellSize;
+
+        return generateDensityGrid(
+          filteredArtifacts,
+          xMin,
+          yMin,
+          xMax,
+          yMax,
+          state.densityHeatmapConfig.gridSize
+        );
+      },
+
+      getBufferQueryResult: (trenchId) => {
+        const state = get();
+        const config = state.bufferQueryConfig;
+        if (!config.active) return null;
+
+        const allArtifacts = state.artifacts.filter((a) => a.trenchId === trenchId);
+
+        if (config.mode === 'point' && config.centerPoint) {
+          const bufferPolygon = generateCirclePolygon(
+            config.centerPoint.x,
+            config.centerPoint.y,
+            config.radius
+          );
+          const found = allArtifacts.filter(
+            (a) => pointInPolygon(a.x, a.y, bufferPolygon)
+          );
+          return {
+            centerX: config.centerPoint.x,
+            centerY: config.centerPoint.y,
+            radius: config.radius,
+            bufferPolygon,
+            artifacts: found,
+          };
+        }
+
+        if (config.mode === 'feature' && config.selectedFeatureId) {
+          const feature = state.features.find((f) => f.id === config.selectedFeatureId);
+          if (!feature) return null;
+
+          const result = getArtifactsInFeatureBuffer(
+            allArtifacts,
+            feature,
+            config.radius
+          );
+
+          return {
+            centerX: result.centroid.x,
+            centerY: result.centroid.y,
+            radius: config.radius,
+            featureId: feature.id,
+            bufferPolygon: result.bufferPolygon,
+            artifacts: result.artifacts,
+          };
+        }
+
+        return null;
+      },
+
+      getNearestNeighbors: (trenchId) => {
+        const state = get();
+        const config = state.nearestNeighborConfig;
+        if (!config.active || !config.artifactId) return null;
+
+        const allArtifacts = state.artifacts.filter((a) => a.trenchId === trenchId);
+        const target = allArtifacts.find((a) => a.id === config.artifactId);
+        if (!target) return null;
+
+        const neighbors = findNearestNeighbors(target, allArtifacts, config.neighborCount);
+        return {
+          artifactId: config.artifactId,
+          neighbors,
+        };
+      },
+
+      getDistributionStats: (artifactIds) => {
+        const state = get();
+        let artifacts: Artifact[];
+
+        if (artifactIds && artifactIds.length > 0) {
+          const idSet = new Set(artifactIds);
+          artifacts = state.artifacts.filter((a) => idSet.has(a.id));
+        } else {
+          const selectedTrenchId = state.selectedTrenchId;
+          if (!selectedTrenchId) {
+            return {
+              count: 0,
+              boundingBox: { xMin: 0, xMax: 0, yMin: 0, yMax: 0, width: 0, height: 0 },
+              elevationRange: { min: 0, max: 0, range: 0 },
+              averageNearestNeighborDistance: 0,
+            };
+          }
+          artifacts = state.artifacts.filter((a) => a.trenchId === selectedTrenchId);
+        }
+
+        return calculateDistributionStats(artifacts);
+      },
+
+      getArtifactClusters: (trenchId) => {
+        const state = get();
+        if (!state.clusterConfig.visible) return [];
+
+        const allArtifacts = state.artifacts.filter((a) => a.trenchId === trenchId);
+        return clusterArtifacts(
+          allArtifacts,
+          state.clusterConfig.distanceThreshold,
+          state.clusterConfig.minClusterSize
+        );
       },
     }),
     {
