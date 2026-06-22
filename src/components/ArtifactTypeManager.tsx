@@ -23,8 +23,8 @@ const DEFAULT_SUBTYPES: Record<ArtifactCategory, string[]> = {
 };
 
 export default function ArtifactTypeManager({ onClose }: ArtifactTypeManagerProps) {
-  const { can, isAdmin, isLeader } = usePermission();
-  const canManage = isAdmin || isLeader;
+  const { can, isAdmin } = usePermission();
+  const canManage = isAdmin;
 
   const subtypes = useAppStore((state) => state.artifactSubtypes);
   const addArtifactSubtype = useAppStore((state) => state.addArtifactSubtype);

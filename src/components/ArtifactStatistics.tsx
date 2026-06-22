@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import * as d3 from 'd3';
 import { useAppStore } from '../store/useAppStore';
 import {
@@ -37,6 +37,12 @@ export default function ArtifactStatistics() {
 
   const [activeTab, setActiveTab] = useState<StatsTab>('unitStacked');
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
+  const [chartWidth, setChartWidth] = useState(800);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  const [compareMode, setCompareMode] = useState<CompareMode>('unit');
+  const [compareA, setCompareA] = useState<string>('');
+  const [compareB, setCompareB] = useState<string>('');
 
   const units = useMemo(() => allUnits.filter(u => u.trenchId === selectedTrenchId), [allUnits, selectedTrenchId]);
   const relations = useMemo(() => allRelations.filter(r => r.trenchId === selectedTrenchId), [allRelations, selectedTrenchId]);
@@ -58,9 +64,21 @@ export default function ArtifactStatistics() {
   const unitStatsMap = useMemo(() => computeUnitStats(units, artifacts, allSubtypes), [units, artifacts, allSubtypes]);
   const periodStatsMap = useMemo(() => computePeriodStats(periods, units, artifacts, allSubtypes, unitToPeriod), [periods, units, artifacts, allSubtypes, unitToPeriod]);
 
-  const [compareMode, setCompareMode] = useState<CompareMode>('unit');
-  const [compareA, setCompareA] = useState<string>('');
-  const [compareB, setCompareB] = useState<string>('');
+  useEffect(() => {
+    if (chartContainerRef.current) {
+      setChartWidth(chartContainerRef.current.clientWidth);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (chartContainerRef.current) {
+        setChartWidth(chartContainerRef.current.clientWidth);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (compareMode === 'unit' && sortedUnitIds.length >= 2) {
@@ -81,9 +99,78 @@ export default function ArtifactStatistics() {
 
   const getSubtypeById = (id: string) => allSubtypes.find(s => s.id === id);
 
-  const renderStackedBarChart = () => {
-    const unitsWithData = sortedUnitIds.filter(id => (unitStatsMap.get(id)?.total || 0) > 0);
+  const unitsWithData = useMemo(
+    () => sortedUnitIds.filter(id => (unitStatsMap.get(id)?.total || 0) > 0),
+    [sortedUnitIds, unitStatsMap]
+  );
 
+  const stackedData = useMemo(() => {
+    const result: Array<{
+      unitId: string;
+      category: ArtifactCategory;
+      value: number;
+      y0: number;
+      y1: number;
+    }> = [];
+    unitsWithData.forEach(unitId => {
+      let cumulative = 0;
+      const stats = unitStatsMap.get(unitId)!;
+      ARTIFACT_CATEGORIES.forEach(cat => {
+        const val = stats.categoryCounts[cat];
+        result.push({
+          unitId,
+          category: cat,
+          value: val,
+          y0: cumulative,
+          y1: cumulative + val,
+        });
+        cumulative += val;
+      });
+    });
+    return result;
+  }, [unitsWithData, unitStatsMap]);
+
+  const handleBarHover = useCallback((e: React.MouseEvent<SVGRectElement>, d: typeof stackedData[0]) => {
+    const rect = (e.currentTarget as SVGRectElement).getBoundingClientRect();
+    const containerRect = chartContainerRef.current?.getBoundingClientRect();
+    const unit = units.find(u => u.id === d.unitId)!;
+    const stats = unitStatsMap.get(d.unitId)!;
+    const pct = stats.total > 0 ? ((d.value / stats.total) * 100).toFixed(1) : '0';
+    setTooltip({
+      x: rect.left - (containerRect?.left || 0) + rect.width / 2,
+      y: rect.top - (containerRect?.top || 0) - 8,
+      content: (
+        <div className="text-xs">
+          <div className="font-semibold text-gray-800 mb-1">{unit.code} - {unit.name}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: CATEGORY_COLORS[d.category] }} />
+            <span>{d.category}: <b>{d.value}</b> ({pct}%)</span>
+          </div>
+        </div>
+      ),
+    });
+  }, [units, unitStatsMap]);
+
+  const handlePieHover = useCallback((e: React.MouseEvent<SVGGElement>, category: ArtifactCategory, value: number, total: number) => {
+    const rect = (e.currentTarget as SVGGElement).getBoundingClientRect();
+    const pct = ((value / total) * 100).toFixed(1);
+    setTooltip({
+      x: rect.left + rect.width / 2,
+      y: rect.top,
+      content: (
+        <div className="text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: CATEGORY_COLORS[category] }} />
+            <span className="font-semibold">{category}</span>
+          </div>
+          <div className="mt-1">数量: <b>{value}</b></div>
+          <div>占比: <b>{pct}%</b></div>
+        </div>
+      ),
+    });
+  }, []);
+
+  const renderStackedBarChart = () => {
     if (unitsWithData.length === 0) {
       return (
         <div className="h-80 flex flex-col items-center justify-center text-gray-400">
@@ -95,19 +182,12 @@ export default function ArtifactStatistics() {
       );
     }
 
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [width, setWidth] = useState(800);
-
-    useEffect(() => {
-      if (containerRef.current) {
-        setWidth(containerRef.current.clientWidth);
-      }
-    }, []);
-
     const height = 400;
     const margin = { top: 20, right: 30, bottom: 80, left: 50 };
-    const innerW = width - margin.left - margin.right;
+    const innerW = chartWidth - margin.left - margin.right;
     const innerH = height - margin.top - margin.bottom;
+
+    if (innerW <= 0) return null;
 
     const x = d3.scaleBand()
       .domain(unitsWithData)
@@ -120,33 +200,9 @@ export default function ArtifactStatistics() {
       .nice()
       .range([innerH, 0]);
 
-    const stackedData: Array<{
-      unitId: string;
-      category: ArtifactCategory;
-      value: number;
-      y0: number;
-      y1: number;
-    }> = [];
-
-    unitsWithData.forEach(unitId => {
-      let cumulative = 0;
-      const stats = unitStatsMap.get(unitId)!;
-      ARTIFACT_CATEGORIES.forEach(cat => {
-        const val = stats.categoryCounts[cat];
-        stackedData.push({
-          unitId,
-          category: cat,
-          value: val,
-          y0: cumulative,
-          y1: cumulative + val,
-        });
-        cumulative += val;
-      });
-    });
-
     return (
-      <div ref={containerRef} className="relative w-full">
-        <svg width={width} height={height} className="w-full">
+      <div ref={chartContainerRef} className="relative w-full">
+        <svg width={chartWidth} height={height} className="w-full">
           <g transform={`translate(${margin.left},${margin.top})`}>
             {y.ticks(5).map(tickVal => (
               <g key={tickVal}>
@@ -204,27 +260,7 @@ export default function ArtifactStatistics() {
                   fill={CATEGORY_COLORS[d.category]}
                   opacity={0.85}
                   className="cursor-pointer transition-opacity hover:opacity-100"
-                  onMouseEnter={(e) => {
-                    const rect = (e.currentTarget as SVGRectElement).getBoundingClientRect();
-                    const containerRect = containerRef.current?.getBoundingClientRect();
-                    const unit = units.find(u => u.id === d.unitId)!;
-                    const pct = unitStatsMap.get(d.unitId)!.total > 0
-                      ? ((d.value / unitStatsMap.get(d.unitId)!.total) * 100).toFixed(1)
-                      : '0';
-                    setTooltip({
-                      x: rect.left - (containerRect?.left || 0) + rect.width / 2,
-                      y: rect.top - (containerRect?.top || 0) - 8,
-                      content: (
-                        <div className="text-xs">
-                          <div className="font-semibold text-gray-800 mb-1">{unit.code} - {unit.name}</div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: CATEGORY_COLORS[d.category] }} />
-                            <span>{d.category}: <b>{d.value}</b> ({pct}%)</span>
-                          </div>
-                        </div>
-                      ),
-                    });
-                  }}
+                  onMouseEnter={(e) => handleBarHover(e, d)}
                   onMouseLeave={() => setTooltip(null)}
                 />
               );
@@ -308,23 +344,7 @@ export default function ArtifactStatistics() {
               return (
                 <g key={i}
                   className="cursor-pointer"
-                  onMouseEnter={(e) => {
-                    const rect = (e.currentTarget as SVGGElement).getBoundingClientRect();
-                    setTooltip({
-                      x: rect.left + rect.width / 2,
-                      y: rect.top,
-                      content: (
-                        <div className="text-xs">
-                          <div className="flex items-center gap-1.5">
-                            <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: CATEGORY_COLORS[a.data.category] }} />
-                            <span className="font-semibold">{a.data.category}</span>
-                          </div>
-                          <div className="mt-1">数量: <b>{a.data.value}</b></div>
-                          <div>占比: <b>{pct}%</b></div>
-                        </div>
-                      ),
-                    });
-                  }}
+                  onMouseEnter={(e) => handlePieHover(e, a.data.category, a.data.value, stats.total)}
                   onMouseLeave={() => setTooltip(null)}
                 >
                   <path
@@ -689,7 +709,7 @@ export default function ArtifactStatistics() {
                 </p>
               </div>
               <div className="text-sm text-gray-500">
-                共 {sortedUnitIds.filter(id => (unitStatsMap.get(id)?.total || 0) > 0).length} 个有遗物的地层单位
+                共 {unitsWithData.length} 个有遗物的地层单位
               </div>
             </div>
             {renderStackedBarChart()}

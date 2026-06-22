@@ -41,7 +41,6 @@ const ROLE_PERMISSIONS: Record<SystemRole, PermissionAction[]> = {
     'stratigraphy:create', 'stratigraphy:edit', 'stratigraphy:delete',
     'unit:create', 'unit:edit', 'unit:delete',
     'artifact:create', 'artifact:edit', 'artifact:delete',
-    'artifactSubtype:create', 'artifactSubtype:edit', 'artifactSubtype:delete',
     'person:create', 'person:edit',
     'excavationLog:create', 'excavationLog:edit', 'excavationLog:delete',
     'relation:create', 'relation:delete',

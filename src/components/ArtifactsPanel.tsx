@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { usePermission } from '../hooks/usePermission';
 import ArtifactsBatchImport from './ArtifactsBatchImport';
@@ -44,8 +44,20 @@ export default function ArtifactsPanel() {
   const deleteArtifact = useAppStore((state) => state.deleteArtifact);
   const matchArtifactSubtype = useAppStore((state) => state.matchArtifactSubtype);
   const getSubtypesByCategory = useAppStore((state) => state.getSubtypesByCategory);
+  const autoAssignSubtypes = useAppStore((state) => state.autoAssignSubtypes);
 
   const { can, canEditArtifact, canDeleteArtifact } = usePermission();
+
+  const autoAssignRan = useRef(false);
+  useEffect(() => {
+    if (!autoAssignRan.current && subtypes.length > 0 && artifacts.length > 0) {
+      const unassigned = artifacts.filter(a => !a.subtypeId);
+      if (unassigned.length > 0) {
+        autoAssignSubtypes();
+      }
+      autoAssignRan.current = true;
+    }
+  }, [subtypes.length, artifacts.length]);
 
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [showAddForm, setShowAddForm] = useState(false);
