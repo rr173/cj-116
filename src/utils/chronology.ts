@@ -8,6 +8,11 @@ import {
   Sample,
   StratigraphicUnit,
   StratigraphicRelation,
+  ChronologyPhase,
+  PhaseChronology,
+  CulturalHiatus,
+  PhaseOrderWarning,
+  PhaseChronologyModel,
 } from '../types';
 
 export const DEFAULT_CALIBRATION_CURVE: CalibrationCurve = {
@@ -495,6 +500,184 @@ export function exportChronologyJSON(model: ChronologyModel): string {
       overlapYears: Math.round(inv.overlapYears),
       gapYears: Math.round(inv.gapYears),
       severity: inv.gapYears > 200 ? '严重' : inv.gapYears > 0 ? '警告' : '轻微',
+    })),
+  };
+  return JSON.stringify(exportObj, null, 2);
+}
+
+export function buildPhaseChronology(
+  phase: ChronologyPhase,
+  unitChronologies: UnitChronology[]
+): PhaseChronology {
+  const phaseUnits = unitChronologies.filter((u) => phase.unitIds.includes(u.unitId));
+  const unitCodes = phaseUnits.map((u) => u.unitCode);
+
+  if (phaseUnits.length === 0) {
+    return {
+      phaseId: phase.id,
+      phaseName: phase.name,
+      unitIds: phase.unitIds,
+      unitCodes: [],
+      unitCount: phase.unitIds.length,
+      hasDateData: false,
+      startBP: null,
+      startCal: null,
+      endBP: null,
+      endCal: null,
+      meanBP: null,
+      meanCal: null,
+    };
+  }
+
+  const allUpper95 = phaseUnits.map((u) => u.combinedConfidence95.upperBP);
+  const allLower95 = phaseUnits.map((u) => u.combinedConfidence95.lowerBP);
+  const allMeans = phaseUnits.map((u) => u.weightedMeanBP);
+
+  const startBP = Math.max(...allUpper95);
+  const endBP = Math.min(...allLower95);
+  const meanBP = allMeans.reduce((a, b) => a + b, 0) / allMeans.length;
+
+  return {
+    phaseId: phase.id,
+    phaseName: phase.name,
+    unitIds: phase.unitIds,
+    unitCodes,
+    unitCount: phase.unitIds.length,
+    hasDateData: true,
+    startBP,
+    startCal: bpToCalendarString(startBP),
+    endBP,
+    endCal: bpToCalendarString(endBP),
+    meanBP,
+    meanCal: bpToCalendarString(meanBP),
+  };
+}
+
+export function detectCulturalHiatuses(
+  sortedPhaseChronologies: PhaseChronology[]
+): CulturalHiatus[] {
+  const hiatuses: CulturalHiatus[] = [];
+
+  for (let i = 0; i < sortedPhaseChronologies.length - 1; i++) {
+    const earlier = sortedPhaseChronologies[i];
+    const later = sortedPhaseChronologies[i + 1];
+
+    if (!earlier.hasDateData || !later.hasDateData) continue;
+    if (earlier.endBP === null || later.startBP === null) continue;
+
+    if (earlier.endBP < later.startBP) {
+      hiatuses.push({
+        earlierPhaseId: earlier.phaseId,
+        earlierPhaseName: earlier.phaseName,
+        laterPhaseId: later.phaseId,
+        laterPhaseName: later.phaseName,
+        hiatusYears: later.startBP - earlier.endBP,
+        earlierEndBP: earlier.endBP,
+        laterStartBP: later.startBP,
+      });
+    }
+  }
+
+  return hiatuses;
+}
+
+export function detectPhaseOrderInconsistencies(
+  phases: ChronologyPhase[],
+  phaseChronologies: PhaseChronology[]
+): PhaseOrderWarning[] {
+  const warnings: PhaseOrderWarning[] = [];
+  const phaseChronoMap = new Map(phaseChronologies.map((p) => [p.phaseId, p]));
+  const sortedByOrder = [...phases].sort((a, b) => a.order - b.order);
+
+  for (let i = 0; i < sortedByOrder.length - 1; i++) {
+    for (let j = i + 1; j < sortedByOrder.length; j++) {
+      const phaseA = sortedByOrder[i];
+      const phaseB = sortedByOrder[j];
+      const chronoA = phaseChronoMap.get(phaseA.id);
+      const chronoB = phaseChronoMap.get(phaseB.id);
+
+      if (!chronoA?.hasDateData || !chronoB?.hasDateData) continue;
+      if (chronoA.meanBP === null || chronoB.meanBP === null) continue;
+
+      if (chronoA.meanBP < chronoB.meanBP) {
+        warnings.push({
+          phaseAId: phaseA.id,
+          phaseAName: phaseA.name,
+          phaseBId: phaseB.id,
+          phaseBName: phaseB.name,
+          phaseAOrder: phaseA.order,
+          phaseBOrder: phaseB.order,
+          phaseAMeanBP: chronoA.meanBP,
+          phaseBMeanBP: chronoB.meanBP,
+          message: `相位「${phaseA.name}」（序号${phaseA.order}）的代表年代 ${chronoA.meanCal} 晚于相位「${phaseB.name}」（序号${phaseB.order}）的 ${chronoB.meanCal}，与指定顺序矛盾`,
+        });
+      }
+    }
+  }
+
+  return warnings;
+}
+
+export function buildPhaseChronologyModel(
+  trenchId: string,
+  phases: ChronologyPhase[],
+  unitChronologies: UnitChronology[]
+): PhaseChronologyModel {
+  const trenchPhases = phases.filter((p) => p.trenchId === trenchId);
+  const sortedPhases = [...trenchPhases].sort((a, b) => a.order - b.order);
+
+  const phaseChronologies = sortedPhases.map((phase) =>
+    buildPhaseChronology(phase, unitChronologies)
+  );
+
+  const hiatuses = detectCulturalHiatuses(phaseChronologies);
+  const orderWarnings = detectPhaseOrderInconsistencies(sortedPhases, phaseChronologies);
+
+  return {
+    trenchId,
+    generatedAt: Date.now(),
+    phases: phaseChronologies,
+    sortedPhaseIds: sortedPhases.map((p) => p.id),
+    hiatuses,
+    orderWarnings,
+  };
+}
+
+export function exportPhaseChronologyJSON(model: PhaseChronologyModel): string {
+  const exportObj = {
+    metadata: {
+      trenchId: model.trenchId,
+      generatedAt: new Date(model.generatedAt).toISOString(),
+    },
+    phases: model.phases.map((p) => ({
+      phaseId: p.phaseId,
+      phaseName: p.phaseName,
+      unitCount: p.unitCount,
+      unitCodes: p.unitCodes,
+      hasDateData: p.hasDateData,
+      dateRange: p.hasDateData
+        ? {
+            startBP: Math.round(p.startBP!),
+            startCal: p.startCal,
+            endBP: Math.round(p.endBP!),
+            endCal: p.endCal,
+            meanBP: Math.round(p.meanBP!),
+            meanCal: p.meanCal,
+          }
+        : null,
+    })),
+    sortedPhaseIds: model.sortedPhaseIds,
+    hiatuses: model.hiatuses.map((h) => ({
+      earlierPhase: h.earlierPhaseName,
+      laterPhase: h.laterPhaseName,
+      hiatusYears: Math.round(h.hiatusYears),
+      earlierEndBP: Math.round(h.earlierEndBP),
+      laterStartBP: Math.round(h.laterStartBP),
+    })),
+    orderWarnings: model.orderWarnings.map((w) => ({
+      phaseA: w.phaseAName,
+      phaseB: w.phaseBName,
+      message: w.message,
     })),
   };
   return JSON.stringify(exportObj, null, 2);

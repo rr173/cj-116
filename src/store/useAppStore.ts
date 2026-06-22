@@ -42,6 +42,7 @@ import {
   ArtifactCluster,
   BufferQueryResult,
   NearestNeighborResult,
+  ChronologyPhase,
 } from '../types';
 import {
   generateId,
@@ -238,6 +239,17 @@ interface AppState {
   getNearestNeighbors: (trenchId: string) => NearestNeighborResult | null;
   getDistributionStats: (artifactIds?: string[]) => DistributionStats;
   getArtifactClusters: (trenchId: string) => ArtifactCluster[];
+
+  chronologyPhases: ChronologyPhase[];
+
+  createChronologyPhase: (data: Omit<ChronologyPhase, 'id' | 'createdAt' | 'order'>) => ChronologyPhase;
+  updateChronologyPhase: (id: string, data: Partial<Omit<ChronologyPhase, 'id' | 'trenchId' | 'createdAt'>>) => void;
+  deleteChronologyPhase: (id: string) => void;
+  getChronologyPhasesByTrench: (trenchId: string) => ChronologyPhase[];
+  assignUnitToPhase: (phaseId: string, unitId: string) => boolean;
+  unassignUnitFromPhase: (unitId: string) => void;
+  reorderChronologyPhase: (phaseId: string, newOrder: number) => void;
+  moveChronologyPhase: (phaseId: string, direction: 'up' | 'down') => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -254,6 +266,7 @@ export const useAppStore = create<AppState>()(
       features: [],
       periods: [],
       featureSpatialRelations: [],
+      chronologyPhases: [],
       selectedFeatureId: null,
       selectedTrenchId: null,
       selectedCellId: null,
@@ -341,6 +354,7 @@ export const useAppStore = create<AppState>()(
           periods: state.periods.filter((p) => p.trenchId !== id),
           featureSpatialRelations: state.featureSpatialRelations.filter((r) => r.trenchId !== id),
           controlPoints: state.controlPoints.filter((cp) => cp.trenchId !== id),
+          chronologyPhases: state.chronologyPhases.filter((p) => p.trenchId !== id),
           selectedTrenchId: state.selectedTrenchId === id ? null : state.selectedTrenchId,
           selectedCellId: null,
           selectedControlPointId: null,
@@ -517,6 +531,10 @@ export const useAppStore = create<AppState>()(
           relations: state.relations.filter(
             (r) => r.fromUnitId !== id && r.toUnitId !== id
           ),
+          chronologyPhases: state.chronologyPhases.map((p) => ({
+            ...p,
+            unitIds: p.unitIds.filter((uid) => uid !== id),
+          })),
         }));
       },
 
@@ -2066,6 +2084,153 @@ export const useAppStore = create<AppState>()(
           state.clusterConfig.distanceThreshold,
           state.clusterConfig.minClusterSize
         );
+      },
+
+      createChronologyPhase: (data) => {
+        if (!checkActionPermission('period:create')) {
+          throw new Error('没有权限创建相位');
+        }
+        const state = get();
+        const trenchPhases = state.chronologyPhases.filter((p) => p.trenchId === data.trenchId);
+        const maxOrder = trenchPhases.length > 0 ? Math.max(...trenchPhases.map((p) => p.order)) : 0;
+        const phase: ChronologyPhase = {
+          ...data,
+          id: generateId(),
+          order: maxOrder + 1,
+          createdAt: Date.now(),
+        };
+        set((state) => ({
+          chronologyPhases: [...state.chronologyPhases, phase],
+        }));
+        logOperationToStorage({
+          operation: 'create',
+          targetType: 'period',
+          targetId: phase.id,
+          targetName: phase.name,
+          details: `创建考古相位: ${phase.name}`,
+        });
+        return phase;
+      },
+
+      updateChronologyPhase: (id, data) => {
+        if (!checkActionPermission('period:edit')) {
+          throw new Error('没有权限编辑相位');
+        }
+        const existing = get().chronologyPhases.find((p) => p.id === id);
+        if (!existing) return;
+        const changes = Object.keys(data)
+          .map((k) => `${k}: ${existing[k as keyof typeof existing]} → ${data[k as keyof typeof data]}`)
+          .join(', ');
+        logOperationToStorage({
+          operation: 'update',
+          targetType: 'period',
+          targetId: id,
+          targetName: existing.name,
+          details: `更新考古相位: ${existing.name}, ${changes}`,
+        });
+        set((state) => ({
+          chronologyPhases: state.chronologyPhases.map((p) =>
+            p.id === id ? { ...p, ...data } : p
+          ),
+        }));
+      },
+
+      deleteChronologyPhase: (id) => {
+        if (!checkActionPermission('period:delete')) {
+          throw new Error('没有权限删除相位');
+        }
+        const existing = get().chronologyPhases.find((p) => p.id === id);
+        if (!existing) return;
+        logOperationToStorage({
+          operation: 'delete',
+          targetType: 'period',
+          targetId: id,
+          targetName: existing?.name,
+          details: `删除考古相位: ${existing?.name || id}`,
+        });
+        const trenchId = existing.trenchId;
+        set((state) => {
+          const remaining = state.chronologyPhases.filter((p) => p.id !== id);
+          const trenchRemaining = remaining
+            .filter((p) => p.trenchId === trenchId)
+            .sort((a, b) => a.order - b.order)
+            .map((p, idx) => ({ ...p, order: idx + 1 }));
+          const others = remaining.filter((p) => p.trenchId !== trenchId);
+          return { chronologyPhases: [...others, ...trenchRemaining] };
+        });
+      },
+
+      getChronologyPhasesByTrench: (trenchId) => {
+        return get()
+          .chronologyPhases.filter((p) => p.trenchId === trenchId)
+          .sort((a, b) => a.order - b.order);
+      },
+
+      assignUnitToPhase: (phaseId, unitId) => {
+        const state = get();
+        const phase = state.chronologyPhases.find((p) => p.id === phaseId);
+        if (!phase) return false;
+        if (phase.unitIds.includes(unitId)) return true;
+
+        const alreadyInPhase = state.chronologyPhases.find((p) => p.unitIds.includes(unitId));
+        if (alreadyInPhase && alreadyInPhase.id !== phaseId) {
+          set((state) => ({
+            chronologyPhases: state.chronologyPhases.map((p) => {
+              if (p.id === alreadyInPhase.id) {
+                return { ...p, unitIds: p.unitIds.filter((uid) => uid !== unitId) };
+              }
+              if (p.id === phaseId) {
+                return { ...p, unitIds: [...p.unitIds, unitId] };
+              }
+              return p;
+            }),
+          }));
+        } else {
+          set((state) => ({
+            chronologyPhases: state.chronologyPhases.map((p) =>
+              p.id === phaseId ? { ...p, unitIds: [...p.unitIds, unitId] } : p
+            ),
+          }));
+        }
+        return true;
+      },
+
+      unassignUnitFromPhase: (unitId) => {
+        set((state) => ({
+          chronologyPhases: state.chronologyPhases.map((p) => ({
+            ...p,
+            unitIds: p.unitIds.filter((uid) => uid !== unitId),
+          })),
+        }));
+      },
+
+      reorderChronologyPhase: (phaseId, newOrder) => {
+        const state = get();
+        const phase = state.chronologyPhases.find((p) => p.id === phaseId);
+        if (!phase) return;
+        const trenchId = phase.trenchId;
+        const trenchPhases = state.chronologyPhases
+          .filter((p) => p.trenchId === trenchId)
+          .sort((a, b) => a.order - b.order);
+        const oldIdx = trenchPhases.findIndex((p) => p.id === phaseId);
+        if (oldIdx < 0) return;
+        const newIdx = Math.max(0, Math.min(trenchPhases.length - 1, newOrder - 1));
+        if (oldIdx === newIdx) return;
+
+        trenchPhases.splice(oldIdx, 1);
+        trenchPhases.splice(newIdx, 0, phase);
+        const reordered = trenchPhases.map((p, idx) => ({ ...p, order: idx + 1 }));
+        const others = state.chronologyPhases.filter((p) => p.trenchId !== trenchId);
+
+        set({ chronologyPhases: [...others, ...reordered] });
+      },
+
+      moveChronologyPhase: (phaseId, direction) => {
+        const state = get();
+        const phase = state.chronologyPhases.find((p) => p.id === phaseId);
+        if (!phase) return;
+        const newOrder = direction === 'up' ? phase.order - 1 : phase.order + 1;
+        state.reorderChronologyPhase(phaseId, newOrder);
       },
     }),
     {

@@ -677,6 +677,61 @@ export interface ChronologyInversion {
   gapYears: number;
 }
 
+export interface ChronologyPhase {
+  id: string;
+  trenchId: string;
+  name: string;
+  unitIds: string[];
+  order: number;
+  createdAt: number;
+}
+
+export interface PhaseChronology {
+  phaseId: string;
+  phaseName: string;
+  unitIds: string[];
+  unitCodes: string[];
+  unitCount: number;
+  hasDateData: boolean;
+  startBP: number | null;
+  startCal: string | null;
+  endBP: number | null;
+  endCal: string | null;
+  meanBP: number | null;
+  meanCal: string | null;
+}
+
+export interface CulturalHiatus {
+  earlierPhaseId: string;
+  earlierPhaseName: string;
+  laterPhaseId: string;
+  laterPhaseName: string;
+  hiatusYears: number;
+  earlierEndBP: number;
+  laterStartBP: number;
+}
+
+export interface PhaseOrderWarning {
+  phaseAId: string;
+  phaseAName: string;
+  phaseBId: string;
+  phaseBName: string;
+  phaseAOrder: number;
+  phaseBOrder: number;
+  phaseAMeanBP: number;
+  phaseBMeanBP: number;
+  message: string;
+}
+
+export interface PhaseChronologyModel {
+  trenchId: string;
+  generatedAt: number;
+  phases: PhaseChronology[];
+  sortedPhaseIds: string[];
+  hiatuses: CulturalHiatus[];
+  orderWarnings: PhaseOrderWarning[];
+}
+
 export interface ChronologyModel {
   trenchId: string;
   generatedAt: number;
