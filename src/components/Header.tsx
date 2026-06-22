@@ -17,6 +17,7 @@ const viewNames: Record<ViewType, string> = {
   matrix: 'Harris矩阵',
   artifacts: '遗物登记',
   samples: '样品采集与送检',
+  chronology: '测年校正与年代序列',
   profile: '剖面图',
   profileEditor: '剖面矢量编辑',
   features: '遗迹要素绘图与分期',

@@ -21,6 +21,7 @@ import FeatureDrawingPanel from './components/FeatureDrawingPanel';
 import ControlPointsPanel from './components/ControlPointsPanel';
 import SnapshotPanel from './components/SnapshotPanel';
 import SpatialAnalysisPanel from './components/SpatialAnalysisPanel';
+import ChronologyPanel from './components/ChronologyPanel';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
 import { ViewType } from './types';
@@ -130,6 +131,8 @@ function App() {
         return <SnapshotPanel />;
       case 'spatialAnalysis':
         return <SpatialAnalysisPanel />;
+      case 'chronology':
+        return <ChronologyPanel />;
       default:
         return <GridView />;
     }

@@ -614,4 +614,74 @@ export interface ClusterConfig {
 
 export type SpatialAnalysisTab = 'heatmap' | 'buffer' | 'nearest' | 'stats' | 'cluster';
 
-export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'profileEditor' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs' | 'features' | 'controlPoints' | 'snapshots' | 'spatialAnalysis';
+export type ViewType = 'grid' | 'stratigraphy' | 'units' | 'matrix' | 'artifacts' | 'samples' | 'profile' | 'profileEditor' | 'personnel' | 'logs' | 'workhours' | 'timeline' | 'users' | 'operationLogs' | 'features' | 'controlPoints' | 'snapshots' | 'spatialAnalysis' | 'chronology';
+
+export interface CalibrationAnchor {
+  bp: number;
+  calBP: number;
+}
+
+export interface CalibrationCurve {
+  id: string;
+  name: string;
+  description: string;
+  anchors: CalibrationAnchor[];
+}
+
+export interface CalibratedSampleDate {
+  pointEstimateBP: number;
+  pointEstimateCal: string;
+  confidence68: { lowerBP: number; upperBP: number; lowerCal: string; upperCal: string };
+  confidence95: { lowerBP: number; upperBP: number; lowerCal: string; upperCal: string };
+  probabilityDistribution: { bp: number; calBP: number; probability: number }[];
+  rawBP: number;
+  rawError: number;
+}
+
+export interface UnitChronology {
+  unitId: string;
+  unitCode: string;
+  unitName: string;
+  unitColor: string;
+  sampleIds: string[];
+  sampleCount: number;
+  weightedMeanBP: number;
+  weightedMeanCal: string;
+  weightedError: number;
+  combinedConfidence68: { lowerBP: number; upperBP: number; lowerCal: string; upperCal: string };
+  combinedConfidence95: { lowerBP: number; upperBP: number; lowerCal: string; upperCal: string };
+  sampleDetails: Array<{
+    sampleId: string;
+    sampleNumber: string;
+    rawBP: number;
+    rawError: number;
+    calibrated: CalibratedSampleDate;
+    weight: number;
+  }>;
+  harrisLevel: number;
+  isAnomaly: boolean;
+}
+
+export interface ChronologyInversion {
+  earlierUnitId: string;
+  earlierUnitCode: string;
+  earlierMeanBP: number;
+  earlier95Lower: number;
+  earlier95Upper: number;
+  laterUnitId: string;
+  laterUnitCode: string;
+  laterMeanBP: number;
+  later95Lower: number;
+  later95Upper: number;
+  overlapYears: number;
+  gapYears: number;
+}
+
+export interface ChronologyModel {
+  trenchId: string;
+  generatedAt: number;
+  calibrationCurveId: string;
+  units: UnitChronology[];
+  sortedUnitIds: string[];
+  inversions: ChronologyInversion[];
+}
